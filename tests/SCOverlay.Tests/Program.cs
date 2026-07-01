@@ -127,6 +127,137 @@ runner.Test("Foundation input provider returns an empty snapshot", () =>
     Assert.Equal(0, snapshot.Buttons.Count);
 });
 
+runner.Test("Keyboard and mouse sources evaluate from normalized snapshot buttons", () =>
+{
+    var sources = new InputSource[]
+    {
+        new KeyboardKeyInputSource
+        {
+            Id = "boost",
+            DisplayName = "Boost",
+            Key = "LeftShift"
+        },
+        new MouseButtonInputSource
+        {
+            Id = "fire",
+            DisplayName = "Fire",
+            Button = "Left"
+        }
+    };
+
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true,
+            [InputSnapshotKeys.MouseButton("Left")] = true
+        });
+
+    EvaluatedInputState state = InputSourceEvaluator.Evaluate(sources, snapshot);
+
+    Assert.True(state.GetButton("boost"));
+    Assert.True(state.GetButton("fire"));
+});
+
+runner.Test("Virtual button axes convert opposite buttons into a signed axis", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("A")] = true,
+            [InputSnapshotKeys.KeyboardButton("D")] = false
+        });
+
+    EvaluatedInputState state = InputSourceEvaluator.Evaluate(profile.InputSources, snapshot);
+
+    Assert.Equal(-1.0, state.GetAxis("strafe-x"));
+});
+
+runner.Test("Joystick axis sources apply scale and inversion", () =>
+{
+    var sources = new InputSource[]
+    {
+        new JoystickAxisInputSource
+        {
+            Id = "roll",
+            DisplayName = "Roll",
+            DeviceId = "joystick:0",
+            AxisIndex = 2,
+            Scale = 0.5,
+            Invert = true
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("joystick:0", 2)] = 0.8
+        },
+        new Dictionary<string, bool>());
+
+    EvaluatedInputState state = InputSourceEvaluator.Evaluate(sources, snapshot);
+
+    Assert.Equal(-0.4, state.GetAxis("roll"));
+});
+
+runner.Test("Composite axes combine axis and button components with clamping", () =>
+{
+    var sources = new InputSource[]
+    {
+        new KeyboardKeyInputSource
+        {
+            Id = "boost-button",
+            DisplayName = "Boost",
+            Key = "LeftShift"
+        },
+        new JoystickAxisInputSource
+        {
+            Id = "base-axis",
+            DisplayName = "Base",
+            DeviceId = "joystick:0",
+            AxisIndex = 0
+        },
+        new CompositeAxisInputSource
+        {
+            Id = "combined",
+            DisplayName = "Combined",
+            Components = new[]
+            {
+                new AxisComponent
+                {
+                    SourceId = "base-axis",
+                    SourceKind = InputSourceKind.Axis,
+                    Scale = 0.75
+                },
+                new AxisComponent
+                {
+                    SourceId = "boost-button",
+                    SourceKind = InputSourceKind.Button,
+                    Scale = 0.5
+                }
+            }
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("joystick:0", 0)] = 0.8
+        },
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        });
+
+    EvaluatedInputState state = InputSourceEvaluator.Evaluate(sources, snapshot);
+
+    Assert.Equal(1.0, state.GetAxis("combined"));
+});
+
 runner.Test("Browser source URL uses runtime settings", () =>
 {
     var server = new BrowserSourceServer(new RuntimeSettings());

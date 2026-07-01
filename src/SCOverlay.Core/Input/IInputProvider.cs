@@ -7,4 +7,6 @@ public interface IInputProvider
     ValueTask<IReadOnlyList<InputDeviceInfo>> EnumerateDevicesAsync(CancellationToken cancellationToken = default);
 
     InputSnapshot Poll();
+
+    ValueTask<InputCaptureResult> CaptureNextBindingAsync(CancellationToken cancellationToken = default);
 }

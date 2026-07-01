@@ -5,7 +5,9 @@ public sealed record InputDeviceInfo(
     string DisplayName,
     InputDeviceKind Kind,
     int AxisCount,
-    int ButtonCount);
+    int ButtonCount,
+    int HatCount = 0,
+    string? Details = null);
 
 public enum InputDeviceKind
 {

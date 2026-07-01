@@ -1,4 +1,5 @@
 using SCOverlay.Core.Input;
+using SCOverlay.Core.Domain;
 
 namespace SCOverlay.Input;
 
@@ -15,5 +16,18 @@ public sealed class FoundationInputProvider : IInputProvider
     public InputSnapshot Poll()
     {
         return InputSnapshot.Empty();
+    }
+
+    public ValueTask<InputCaptureResult> CaptureNextBindingAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var source = new KeyboardKeyInputSource
+        {
+            Id = "unbound",
+            DisplayName = "Unbound",
+            Key = string.Empty
+        };
+
+        return ValueTask.FromResult(new InputCaptureResult(source, "No input provider is attached.", DateTimeOffset.UtcNow));
     }
 }

@@ -1,0 +1,17 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SCOverlay.Core\SCOverlay.Core.csproj" />
+    <ProjectReference Include="..\SCOverlay.Input\SCOverlay.Input.csproj" />
+    <ProjectReference Include="..\SCOverlay.BrowserSource\SCOverlay.BrowserSource.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>

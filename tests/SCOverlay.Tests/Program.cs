@@ -119,20 +119,37 @@ runner.Test("File profile store saves, lists, loads, and validates", () =>
     Assert.True(ProfileValidator.Validate(loaded).IsValid);
 });
 
-runner.Test("App settings store saves and loads active profile", () =>
+runner.Test("App settings store saves and loads active profile and desktop overlay settings", () =>
 {
     string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
     var paths = TestPaths(root);
     var store = new FileAppSettingsStore(paths);
     var settings = new AppSettings
     {
-        ActiveProfileId = "custom-profile"
+        ActiveProfileId = "custom-profile",
+        DesktopOverlay = new DesktopOverlaySettings
+        {
+            IsVisible = true,
+            IsLocked = false,
+            IsClickThrough = false,
+            Left = 321,
+            Top = 123,
+            Width = 800,
+            Height = 450
+        }
     };
 
     store.SaveAsync(settings).AsTask().GetAwaiter().GetResult();
     AppSettings loaded = store.LoadAsync().AsTask().GetAwaiter().GetResult();
 
     Assert.Equal("custom-profile", loaded.ActiveProfileId);
+    Assert.True(loaded.DesktopOverlay.IsVisible);
+    Assert.False(loaded.DesktopOverlay.IsLocked);
+    Assert.False(loaded.DesktopOverlay.IsClickThrough);
+    Assert.Equal(321, loaded.DesktopOverlay.Left);
+    Assert.Equal(123, loaded.DesktopOverlay.Top);
+    Assert.Equal(800, loaded.DesktopOverlay.Width);
+    Assert.Equal(450, loaded.DesktopOverlay.Height);
 });
 
 runner.Test("Profile bootstrapper materializes default profiles once", () =>

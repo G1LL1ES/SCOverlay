@@ -7,6 +7,8 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using Drawing = System.Drawing;
+using Forms = System.Windows.Forms;
 using SCOverlay.BrowserSource;
 using SCOverlay.Core.Application;
 using SCOverlay.Core.Diagnostics;
@@ -35,8 +37,13 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<AppearancePresetItem> appearancePresetItems = new();
     private AppSettings appSettings;
     private OverlayProfile profile;
+    private DesktopOverlayWindow? desktopOverlayWindow;
+    private Forms.NotifyIcon? trayIcon;
+    private OverlayState latestOverlayState;
     private bool isLoadingProfiles;
     private bool isLoadingAppearance = true;
+    private bool isRefreshingDesktopOverlayUi;
+    private bool isClosing;
     private CancellationTokenSource? captureCancellation;
     private int captureSessionId;
 
@@ -47,11 +54,13 @@ public partial class MainWindow : Window
         profileStore = new FileProfileStore(paths);
         settingsStore = new FileAppSettingsStore(paths);
         profileJsonOptions = ProfileJsonSerializerOptions.Create();
-        profile = LoadInitialProfile();
-        appSettings = new AppSettings
+        appSettings = LoadInitialSettings();
+        profile = LoadInitialProfile(appSettings);
+        appSettings = appSettings with
         {
             ActiveProfileId = profile.Id
         };
+        latestOverlayState = OverlayState.Empty(profile.Id);
         inputProvider = new WindowsInputProvider();
         stateEngine = new OverlayStateEngine();
         browserSourceServer = new BrowserSourceServer(profile.Runtime, OverlayState.Empty(profile.Id));
@@ -78,6 +87,8 @@ public partial class MainWindow : Window
         ObsUrlText.Text = $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}";
         NewProfileNameTextBox.Text = $"{profile.Name} Copy";
         RefreshAppearanceUi();
+        RefreshDesktopOverlayUi();
+        InitializeTrayIcon();
         FooterStatusText.Text = $"Runtime data: {paths.DataRoot}";
         this.log.Info($"SC Overlay initialized with {inputProvider.Name}. Active profile: {profile.Id}. OBS URL: {browserSourceServer.Url}");
 
@@ -86,12 +97,24 @@ public partial class MainWindow : Window
         Loaded += OnLoaded;
     }
 
-    private OverlayProfile LoadInitialProfile()
+    private AppSettings LoadInitialSettings()
+    {
+        try
+        {
+            return settingsStore.LoadAsync().AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to load app settings. Falling back to defaults.", exception);
+            return new AppSettings();
+        }
+    }
+
+    private OverlayProfile LoadInitialProfile(AppSettings loadedSettings)
     {
         try
         {
             ProfileBootstrapper.EnsureDefaultProfilesAsync(profileStore).AsTask().GetAwaiter().GetResult();
-            AppSettings loadedSettings = settingsStore.LoadAsync().AsTask().GetAwaiter().GetResult();
             IReadOnlyList<string> ids = profileStore.ListProfileIdsAsync().AsTask().GetAwaiter().GetResult();
             string profileId = ids.Contains(loadedSettings.ActiveProfileId, StringComparer.OrdinalIgnoreCase)
                 ? loadedSettings.ActiveProfileId
@@ -110,6 +133,7 @@ public partial class MainWindow : Window
         await RefreshProfilesAsync(profile.Id);
         RefreshBindingUi();
         ProfileStatusText.Text = $"Active: {profile.Name}";
+        ShowDesktopOverlayFromSettings();
     }
 
     private async void OnSourceInitialized(object? sender, EventArgs e)
@@ -210,7 +234,9 @@ public partial class MainWindow : Window
             InputSnapshot snapshot = inputProvider.Poll();
             EvaluatedInputState evaluated = InputSourceEvaluator.Evaluate(profile.InputSources, snapshot);
             OverlayState overlayState = stateEngine.BuildState(profile, snapshot);
+            latestOverlayState = overlayState;
             browserSourceServer.UpdateState(overlayState);
+            desktopOverlayWindow?.UpdateState(overlayState);
 
             RawSnapshotText.Text = FormatRawSnapshot(snapshot);
             ProfileValuesText.Text = FormatProfileValues(evaluated);
@@ -240,6 +266,8 @@ public partial class MainWindow : Window
             };
             await settingsStore.SaveAsync(appSettings);
             stateEngine.Reset();
+            latestOverlayState = OverlayState.Empty(profile.Id);
+            desktopOverlayWindow?.UpdateState(latestOverlayState);
             RefreshBindingUi();
             RefreshAppearanceUi();
             NewProfileNameTextBox.Text = $"{profile.Name} Copy";
@@ -295,7 +323,7 @@ public partial class MainWindow : Window
 
     private async void ImportProfileButton_OnClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog
+        var dialog = new Microsoft.Win32.OpenFileDialog
         {
             Filter = "SC Overlay profile (*.json)|*.json|JSON files (*.json)|*.json|All files (*.*)|*.*",
             Title = "Import SC Overlay Profile"
@@ -343,7 +371,7 @@ public partial class MainWindow : Window
 
     private async void ExportProfileButton_OnClick(object sender, RoutedEventArgs e)
     {
-        var dialog = new SaveFileDialog
+        var dialog = new Microsoft.Win32.SaveFileDialog
         {
             Filter = "SC Overlay profile (*.json)|*.json|JSON files (*.json)|*.json|All files (*.*)|*.*",
             FileName = $"{profile.Id}.json",
@@ -380,6 +408,59 @@ public partial class MainWindow : Window
             log.Error("Failed to refresh devices.", exception);
             FooterStatusText.Text = $"Could not refresh devices: {exception.Message}";
         }
+    }
+
+    private async void DesktopOverlayVisibleCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isRefreshingDesktopOverlayUi)
+        {
+            return;
+        }
+
+        await SetDesktopOverlayVisibleAsync(DesktopOverlayVisibleCheckBox.IsChecked == true);
+    }
+
+    private async void DesktopOverlayLockedCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isRefreshingDesktopOverlayUi)
+        {
+            return;
+        }
+
+        bool locked = DesktopOverlayLockedCheckBox.IsChecked == true;
+        DesktopOverlaySettings current = CaptureCurrentDesktopOverlaySettings();
+        DesktopOverlaySettings settings = current with
+        {
+            IsLocked = locked,
+            IsClickThrough = locked ? current.IsClickThrough : false
+        };
+        await ApplyDesktopOverlaySettingsAsync(settings);
+    }
+
+    private async void DesktopOverlayClickThroughCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isRefreshingDesktopOverlayUi)
+        {
+            return;
+        }
+
+        bool clickThrough = DesktopOverlayClickThroughCheckBox.IsChecked == true;
+        DesktopOverlaySettings current = CaptureCurrentDesktopOverlaySettings();
+        DesktopOverlaySettings settings = current with
+        {
+            IsClickThrough = clickThrough,
+            IsLocked = clickThrough || current.IsLocked
+        };
+        await ApplyDesktopOverlaySettingsAsync(settings);
+    }
+
+    private async void ResetDesktopOverlayButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        EnsureDesktopOverlayWindow();
+        desktopOverlayWindow!.ResetPlacement();
+        DesktopOverlaySettings settings = desktopOverlayWindow.CaptureSettings(appSettings.DesktopOverlay.IsVisible);
+        await ApplyDesktopOverlaySettingsAsync(settings);
+        FooterStatusText.Text = "Desktop overlay position reset.";
     }
 
     private void BindingSourceComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -598,6 +679,204 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RefreshDesktopOverlayUi()
+    {
+        isRefreshingDesktopOverlayUi = true;
+        try
+        {
+            DesktopOverlaySettings settings = appSettings.DesktopOverlay;
+            DesktopOverlayVisibleCheckBox.IsChecked = settings.IsVisible;
+            DesktopOverlayLockedCheckBox.IsChecked = settings.IsLocked;
+            DesktopOverlayClickThroughCheckBox.IsChecked = settings.IsClickThrough;
+            DesktopOverlayStatusText.Text = settings.IsVisible
+                ? settings.IsClickThrough
+                    ? "Visible and click-through."
+                    : settings.IsLocked
+                    ? "Visible and locked."
+                    : "Visible and editable."
+                : "Hidden.";
+        }
+        finally
+        {
+            isRefreshingDesktopOverlayUi = false;
+        }
+    }
+
+    private void ShowDesktopOverlayFromSettings()
+    {
+        if (!appSettings.DesktopOverlay.IsVisible)
+        {
+            return;
+        }
+
+        EnsureDesktopOverlayWindow();
+        desktopOverlayWindow!.ApplySettings(appSettings.DesktopOverlay);
+        desktopOverlayWindow.UpdateState(latestOverlayState);
+        desktopOverlayWindow.Show();
+        desktopOverlayWindow.Topmost = true;
+        RebuildTrayMenu();
+    }
+
+    private async Task SetDesktopOverlayVisibleAsync(bool isVisible)
+    {
+        if (isVisible)
+        {
+            EnsureDesktopOverlayWindow();
+            desktopOverlayWindow!.ApplySettings(appSettings.DesktopOverlay with
+            {
+                IsVisible = true
+            });
+            desktopOverlayWindow.UpdateState(latestOverlayState);
+            desktopOverlayWindow.Show();
+            desktopOverlayWindow.Topmost = true;
+        }
+        else
+        {
+            desktopOverlayWindow?.Hide();
+        }
+
+        DesktopOverlaySettings settings = desktopOverlayWindow?.CaptureSettings(isVisible) ??
+            appSettings.DesktopOverlay with
+            {
+                IsVisible = isVisible
+            };
+        await ApplyDesktopOverlaySettingsAsync(settings);
+        FooterStatusText.Text = isVisible ? "Desktop overlay shown." : "Desktop overlay hidden.";
+    }
+
+    private async Task ApplyDesktopOverlaySettingsAsync(DesktopOverlaySettings settings)
+    {
+        appSettings = appSettings with
+        {
+            DesktopOverlay = settings
+        };
+
+        if (desktopOverlayWindow is not null)
+        {
+            desktopOverlayWindow.ApplySettings(settings);
+        }
+
+        await settingsStore.SaveAsync(appSettings);
+        RefreshDesktopOverlayUi();
+        RebuildTrayMenu();
+    }
+
+    private DesktopOverlaySettings CaptureCurrentDesktopOverlaySettings()
+    {
+        return desktopOverlayWindow?.CaptureSettings(appSettings.DesktopOverlay.IsVisible) ??
+            appSettings.DesktopOverlay;
+    }
+
+    private void EnsureDesktopOverlayWindow()
+    {
+        if (desktopOverlayWindow is not null)
+        {
+            return;
+        }
+
+        desktopOverlayWindow = new DesktopOverlayWindow();
+        desktopOverlayWindow.ApplySettings(appSettings.DesktopOverlay);
+        desktopOverlayWindow.UpdateState(latestOverlayState);
+        desktopOverlayWindow.Closed += (_, _) =>
+        {
+            desktopOverlayWindow = null;
+            if (!isClosing)
+            {
+                _ = Dispatcher.InvokeAsync(async () =>
+                {
+                    await ApplyDesktopOverlaySettingsAsync(appSettings.DesktopOverlay with
+                    {
+                        IsVisible = false
+                    });
+                });
+            }
+        };
+    }
+
+    private void InitializeTrayIcon()
+    {
+        trayIcon = new Forms.NotifyIcon
+        {
+            Icon = Drawing.SystemIcons.Application,
+            Text = "SC Overlay",
+            Visible = true
+        };
+        trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+        RebuildTrayMenu();
+    }
+
+    private void RebuildTrayMenu()
+    {
+        if (trayIcon is null)
+        {
+            return;
+        }
+
+        Forms.ContextMenuStrip menu = new();
+        menu.Items.Add("Show SC Overlay", null, (_, _) => Dispatcher.Invoke(ShowMainWindow));
+        menu.Items.Add(
+            appSettings.DesktopOverlay.IsVisible ? "Hide Desktop Overlay" : "Show Desktop Overlay",
+            null,
+            (_, _) => Dispatcher.Invoke(() => _ = SetDesktopOverlayVisibleAsync(!appSettings.DesktopOverlay.IsVisible)));
+        menu.Items.Add(
+            appSettings.DesktopOverlay.IsLocked ? "Unlock Desktop Overlay" : "Lock Desktop Overlay",
+            null,
+            (_, _) => Dispatcher.Invoke(() =>
+            {
+                DesktopOverlaySettings current = CaptureCurrentDesktopOverlaySettings();
+                DesktopOverlaySettings settings = current with
+                {
+                    IsLocked = !current.IsLocked,
+                    IsClickThrough = !current.IsLocked ? current.IsClickThrough : false
+                };
+                _ = ApplyDesktopOverlaySettingsAsync(settings);
+            }));
+        menu.Items.Add(
+            appSettings.DesktopOverlay.IsClickThrough ? "Disable Click-through" : "Enable Click-through",
+            null,
+            (_, _) => Dispatcher.Invoke(() =>
+            {
+                DesktopOverlaySettings current = CaptureCurrentDesktopOverlaySettings();
+                bool clickThrough = !current.IsClickThrough;
+                DesktopOverlaySettings settings = current with
+                {
+                    IsClickThrough = clickThrough,
+                    IsLocked = clickThrough || current.IsLocked
+                };
+                _ = ApplyDesktopOverlaySettingsAsync(settings);
+            }));
+        menu.Items.Add("Reset Desktop Overlay", null, (_, _) => Dispatcher.Invoke(() =>
+        {
+            EnsureDesktopOverlayWindow();
+            desktopOverlayWindow!.ResetPlacement();
+            _ = ApplyDesktopOverlaySettingsAsync(desktopOverlayWindow.CaptureSettings(appSettings.DesktopOverlay.IsVisible));
+        }));
+        menu.Items.Add("-");
+        menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(Close));
+
+        Forms.ContextMenuStrip? oldMenu = trayIcon.ContextMenuStrip;
+        trayIcon.ContextMenuStrip = menu;
+        oldMenu?.Dispose();
+    }
+
+    private void ShowMainWindow()
+    {
+        if (!IsVisible)
+        {
+            Show();
+        }
+
+        if (WindowState == WindowState.Minimized)
+        {
+            WindowState = WindowState.Normal;
+        }
+
+        Activate();
+        Topmost = true;
+        Topmost = false;
+        Focus();
+    }
+
     private AppearanceSettings BuildAppearanceFromUi()
     {
         AppearancePresetItem preset = SelectedAppearancePreset();
@@ -632,18 +911,46 @@ public partial class MainWindow : Window
     {
         AppearancePresetItem preset = SelectedAppearancePreset();
         byte alpha = (byte)Math.Round(preset.ActiveColor.A * Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0));
-        AppearancePreviewText.Foreground = new SolidColorBrush(Color.FromArgb(alpha, preset.ActiveColor.R, preset.ActiveColor.G, preset.ActiveColor.B));
+        AppearancePreviewText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, preset.ActiveColor.R, preset.ActiveColor.G, preset.ActiveColor.B));
         AppearancePreviewText.FontSize = 22 * Math.Clamp(AppearanceScaleSlider.Value, 0.5, 1.75);
     }
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        isClosing = true;
         Interlocked.Increment(ref captureSessionId);
         inputTimer.Stop();
+        if (desktopOverlayWindow is not null)
+        {
+            appSettings = appSettings with
+            {
+                DesktopOverlay = desktopOverlayWindow.CaptureSettings(desktopOverlayWindow.IsVisible)
+            };
+            desktopOverlayWindow.Close();
+            desktopOverlayWindow = null;
+        }
+
+        try
+        {
+            settingsStore.SaveAsync(appSettings).AsTask().GetAwaiter().GetResult();
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to persist app settings on shutdown.", exception);
+        }
+
+        if (trayIcon is not null)
+        {
+            trayIcon.Visible = false;
+            trayIcon.ContextMenuStrip?.Dispose();
+            trayIcon.Dispose();
+            trayIcon = null;
+        }
+
         browserSourceServer.Dispose();
         captureCancellation?.Cancel();
         captureCancellation?.Dispose();
-        Application.Current.Shutdown();
+        System.Windows.Application.Current.Shutdown();
     }
 
     private bool IsCurrentCaptureSession(int sessionId)

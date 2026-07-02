@@ -120,6 +120,44 @@
                                        FontSize="12"
                                        Margin="0,12,0,0"
                                        TextWrapping="Wrap" />
+
+                            <TextBlock Text="Desktop overlay"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Margin="0,24,0,0" />
+                            <WrapPanel Margin="0,12,0,0">
+                                <CheckBox x:Name="DesktopOverlayVisibleCheckBox"
+                                          Content="Show"
+                                          Foreground="#D5E1EA"
+                                          Margin="0,0,16,8"
+                                          Checked="DesktopOverlayVisibleCheckBox_OnChanged"
+                                          Unchecked="DesktopOverlayVisibleCheckBox_OnChanged" />
+                                <CheckBox x:Name="DesktopOverlayLockedCheckBox"
+                                          Content="Locked"
+                                          Foreground="#D5E1EA"
+                                          Margin="0,0,16,8"
+                                          Checked="DesktopOverlayLockedCheckBox_OnChanged"
+                                          Unchecked="DesktopOverlayLockedCheckBox_OnChanged" />
+                                <CheckBox x:Name="DesktopOverlayClickThroughCheckBox"
+                                          Content="Click-through"
+                                          Foreground="#D5E1EA"
+                                          Margin="0,0,16,8"
+                                          Checked="DesktopOverlayClickThroughCheckBox_OnChanged"
+                                          Unchecked="DesktopOverlayClickThroughCheckBox_OnChanged" />
+                            </WrapPanel>
+                            <WrapPanel Margin="0,6,0,0">
+                                <Button Content="Reset Position"
+                                        MinWidth="116"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="ResetDesktopOverlayButton_OnClick" />
+                            </WrapPanel>
+                            <TextBlock x:Name="DesktopOverlayStatusText"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,8,0,0"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 

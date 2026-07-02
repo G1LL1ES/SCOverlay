@@ -5,7 +5,7 @@ using SCOverlay.Core.Diagnostics;
 
 namespace SCOverlay.App;
 
-public partial class App : Application
+public partial class App : System.Windows.Application
 {
     private AppLog? log;
 

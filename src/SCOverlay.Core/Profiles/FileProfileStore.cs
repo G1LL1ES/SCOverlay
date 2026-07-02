@@ -34,7 +34,8 @@ public sealed class FileProfileStore : IProfileStore
     {
         string path = GetProfilePath(profileId);
         await using FileStream stream = File.OpenRead(path);
-        OverlayProfile? profile = await JsonSerializer.DeserializeAsync<OverlayProfile>(stream, jsonOptions, cancellationToken);
+        OverlayProfile? profile = await JsonSerializer.DeserializeAsync<OverlayProfile>(stream, jsonOptions, cancellationToken)
+            .ConfigureAwait(false);
         if (profile is null)
         {
             throw new ProfileValidationException(new[]
@@ -56,7 +57,8 @@ public sealed class FileProfileStore : IProfileStore
 
         string path = GetProfilePath(profile.Id);
         await using FileStream stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, profile, jsonOptions, cancellationToken);
+        await JsonSerializer.SerializeAsync(stream, profile, jsonOptions, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private string GetProfilePath(string profileId)

@@ -119,6 +119,171 @@ runner.Test("File profile store saves, lists, loads, and validates", () =>
     Assert.True(ProfileValidator.Validate(loaded).IsValid);
 });
 
+runner.Test("App settings store saves and loads active profile", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    var paths = TestPaths(root);
+    var store = new FileAppSettingsStore(paths);
+    var settings = new AppSettings
+    {
+        ActiveProfileId = "custom-profile"
+    };
+
+    store.SaveAsync(settings).AsTask().GetAwaiter().GetResult();
+    AppSettings loaded = store.LoadAsync().AsTask().GetAwaiter().GetResult();
+
+    Assert.Equal("custom-profile", loaded.ActiveProfileId);
+});
+
+runner.Test("Profile bootstrapper materializes default profiles once", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    var store = new FileProfileStore(TestPaths(root));
+
+    ProfileBootstrapper.EnsureDefaultProfilesAsync(store).AsTask().GetAwaiter().GetResult();
+    ProfileBootstrapper.EnsureDefaultProfilesAsync(store).AsTask().GetAwaiter().GetResult();
+    IReadOnlyList<string> ids = store.ListProfileIdsAsync().AsTask().GetAwaiter().GetResult();
+
+    Assert.Contains(ids, "kbm-default");
+    Assert.Contains(ids, "hotas-reference");
+    Assert.Equal(2, ids.Count);
+});
+
+runner.Test("Profile bootstrapper repairs empty default profile files", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    AppPaths paths = TestPaths(root);
+    Directory.CreateDirectory(paths.ProfilesDirectory);
+    File.WriteAllText(Path.Combine(paths.ProfilesDirectory, "kbm-default.json"), string.Empty);
+    var store = new FileProfileStore(paths);
+
+    ProfileBootstrapper.EnsureDefaultProfilesAsync(store).AsTask().GetAwaiter().GetResult();
+    OverlayProfile repaired = store.LoadAsync("kbm-default").AsTask().GetAwaiter().GetResult();
+
+    Assert.Equal("kbm-default", repaired.Id);
+    Assert.True(repaired.InputSources.Count > 0);
+});
+
+runner.Test("Profile editor creates safe profile copies", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    string id = ProfileEditor.CreateSafeProfileId("My SC Profile!", new[] { "my-sc-profile" });
+    OverlayProfile copy = ProfileEditor.CreateCopy(profile, id, "My SC Profile!");
+
+    Assert.Equal("my-sc-profile-2", id);
+    Assert.Equal("My SC Profile!", copy.Name);
+    Assert.Equal(profile.InputSources.Count, copy.InputSources.Count);
+});
+
+runner.Test("Profile editor replaces direct binding while preserving source identity", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new MouseButtonInputSource
+    {
+        Id = "mouse-x1",
+        DisplayName = "Mouse X1",
+        Button = "X1"
+    };
+
+    OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "boost", captured);
+    MouseButtonInputSource boost = updated.InputSources.OfType<MouseButtonInputSource>().Single(source => source.Id == "boost");
+
+    Assert.Equal("Boost", boost.DisplayName);
+    Assert.Equal("X1", boost.Button);
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
+runner.Test("Profile editor can replace a virtual KBM axis action with a joystick axis", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new JoystickAxisInputSource
+    {
+        Id = "captured-axis",
+        DisplayName = "Captured Axis",
+        DeviceId = "hid:stick",
+        AxisIndex = 2
+    };
+
+    OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "look-x", captured);
+    JoystickAxisInputSource lookX = updated.InputSources.OfType<JoystickAxisInputSource>().Single(source => source.Id == "look-x");
+    StickWidgetDefinition lookWidget = updated.Widgets.OfType<StickWidgetDefinition>().Single(widget => widget.Id == "look-widget");
+
+    Assert.Equal("Look X", lookX.DisplayName);
+    Assert.Equal("hid:stick", lookX.DeviceId);
+    Assert.Equal(2, lookX.AxisIndex);
+    Assert.Equal("look-x", lookWidget.XSourceId);
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
+runner.Test("Profile editor can replace state text axis with a button", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateHotasReference();
+    var captured = new JoystickButtonInputSource
+    {
+        Id = "captured-button",
+        DisplayName = "Captured Button",
+        DeviceId = "hid:stick",
+        ButtonIndex = 4
+    };
+
+    OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "brake-axis", captured);
+    JoystickButtonInputSource brake = updated.InputSources.OfType<JoystickButtonInputSource>().Single(source => source.Id == "brake-axis");
+    StateTextWidgetDefinition brakeWidget = updated.Widgets.OfType<StateTextWidgetDefinition>().Single(widget => widget.Id == "brake-widget");
+
+    Assert.Equal("Brake Axis", brake.DisplayName);
+    Assert.Equal(4, brake.ButtonIndex);
+    Assert.Equal(InputSourceKind.Button, brakeWidget.SourceKind);
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
+runner.Test("Profile editor rejects button captures for axis widgets", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new JoystickButtonInputSource
+    {
+        Id = "captured-button",
+        DisplayName = "Captured Button",
+        DeviceId = "hid:stick",
+        ButtonIndex = 1
+    };
+
+    bool rejected = false;
+    try
+    {
+        ProfileEditor.ReplaceInputSource(profile, "look-x", captured);
+    }
+    catch (InvalidOperationException)
+    {
+        rejected = true;
+    }
+
+    Assert.True(rejected);
+});
+
+runner.Test("Profile editor rejects captures with the wrong source kind", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new JoystickAxisInputSource
+    {
+        Id = "axis",
+        DisplayName = "Axis",
+        DeviceId = "hid:test",
+        AxisIndex = 0
+    };
+
+    bool rejected = false;
+    try
+    {
+        ProfileEditor.ReplaceInputSource(profile, "strafe-left", captured);
+    }
+    catch (InvalidOperationException)
+    {
+        rejected = true;
+    }
+
+    Assert.True(rejected);
+});
+
 runner.Test("Foundation input provider returns an empty snapshot", () =>
 {
     var provider = new FoundationInputProvider();
@@ -481,6 +646,15 @@ runner.Test("Browser source serves OBS page, state JSON, and assets", () =>
 });
 
 return runner.Finish();
+
+static AppPaths TestPaths(string root)
+{
+    return new AppPaths(
+        DataRoot: root,
+        ProfilesDirectory: Path.Combine(root, "profiles"),
+        LogsDirectory: Path.Combine(root, "logs"),
+        AssetsDirectory: Path.Combine(root, "assets"));
+}
 
 static InputSnapshot AxisSnapshot(DateTimeOffset timestamp, double value)
 {

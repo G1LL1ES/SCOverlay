@@ -9,6 +9,8 @@ public partial class App : System.Windows.Application
 {
     private AppLog? log;
     private SingleInstanceCoordinator? singleInstance;
+    private bool shutdownStarted;
+    private int forcedExitScheduled;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -59,7 +61,7 @@ public partial class App : System.Windows.Application
         var window = new MainWindow(paths, log);
         MainWindow = window;
         window.Show();
-        singleInstance.StartServer(Dispatcher, window.BringToFront, window.Close);
+        singleInstance.StartServer(Dispatcher, window.BringToFront, RequestShutdown);
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -68,6 +70,50 @@ public partial class App : System.Windows.Application
         singleInstance = null;
         log?.Info("SC Overlay exiting.");
         base.OnExit(e);
+    }
+
+    public void RequestShutdown()
+    {
+        if (shutdownStarted)
+        {
+            return;
+        }
+
+        shutdownStarted = true;
+        ScheduleForcedExitFallback();
+        if (MainWindow is not null)
+        {
+            MainWindow.Close();
+            return;
+        }
+
+        Shutdown(0);
+    }
+
+    public void CompleteShutdown()
+    {
+        ScheduleForcedExitFallback();
+        if (!shutdownStarted)
+        {
+            shutdownStarted = true;
+        }
+
+        Shutdown(0);
+        Environment.Exit(0);
+    }
+
+    public void ScheduleForcedExitFallback()
+    {
+        if (Interlocked.Exchange(ref forcedExitScheduled, 1) == 1)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+            Environment.Exit(0);
+        });
     }
 
     private static InstanceConflictChoice ResolveInstanceConflictChoice(IReadOnlyCollection<string> args)

@@ -82,16 +82,26 @@ public sealed class BrowserSourceServer : IDisposable
         }
 
         cancellation?.Cancel();
-        listener.Stop();
+        try
+        {
+            listener.Stop();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
 
         try
         {
-            serverTask?.GetAwaiter().GetResult();
+            serverTask?.Wait(TimeSpan.FromSeconds(1));
         }
         catch (OperationCanceledException)
         {
         }
         catch (HttpListenerException)
+        {
+        }
+        catch (AggregateException exception) when (exception.InnerExceptions.All(inner =>
+            inner is OperationCanceledException or HttpListenerException or ObjectDisposedException))
         {
         }
 

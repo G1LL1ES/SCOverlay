@@ -852,7 +852,7 @@ public partial class MainWindow : Window
             _ = ApplyDesktopOverlaySettingsAsync(desktopOverlayWindow.CaptureSettings(appSettings.DesktopOverlay.IsVisible));
         }));
         menu.Items.Add("-");
-        menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(Close));
+        menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(RequestAppShutdown));
 
         Forms.ContextMenuStrip? oldMenu = trayIcon.ContextMenuStrip;
         trayIcon.ContextMenuStrip = menu;
@@ -875,6 +875,18 @@ public partial class MainWindow : Window
         Topmost = true;
         Topmost = false;
         Focus();
+    }
+
+    private void RequestAppShutdown()
+    {
+        if (System.Windows.Application.Current is App app)
+        {
+            app.RequestShutdown();
+        }
+        else
+        {
+            Close();
+        }
     }
 
     private AppearanceSettings BuildAppearanceFromUi()
@@ -917,9 +929,15 @@ public partial class MainWindow : Window
 
     private void OnClosed(object? sender, EventArgs e)
     {
+        if (System.Windows.Application.Current is App currentApp)
+        {
+            currentApp.ScheduleForcedExitFallback();
+        }
+
         isClosing = true;
         Interlocked.Increment(ref captureSessionId);
         inputTimer.Stop();
+        captureCancellation?.Cancel();
         if (desktopOverlayWindow is not null)
         {
             appSettings = appSettings with
@@ -949,9 +967,15 @@ public partial class MainWindow : Window
 
         browserSourceServer.Dispose();
         inputProvider.Dispose();
-        captureCancellation?.Cancel();
         captureCancellation?.Dispose();
-        System.Windows.Application.Current.Shutdown();
+        if (System.Windows.Application.Current is App app)
+        {
+            app.CompleteShutdown();
+        }
+        else
+        {
+            System.Windows.Application.Current.Shutdown();
+        }
     }
 
     private bool IsCurrentCaptureSession(int sessionId)

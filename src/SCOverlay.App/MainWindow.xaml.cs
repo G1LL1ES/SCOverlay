@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Net;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -27,7 +28,6 @@ public partial class MainWindow : Window
     private readonly IProfileStore profileStore;
     private readonly FileAppSettingsStore settingsStore;
     private readonly WindowsInputProvider inputProvider;
-    private readonly BrowserSourceServer browserSourceServer;
     private readonly OverlayStateEngine stateEngine;
     private readonly DispatcherTimer inputTimer;
     private readonly JsonSerializerOptions profileJsonOptions;
@@ -37,6 +37,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<AppearancePresetItem> appearancePresetItems = new();
     private AppSettings appSettings;
     private OverlayProfile profile;
+    private BrowserSourceServer browserSourceServer;
     private DesktopOverlayWindow? desktopOverlayWindow;
     private Forms.NotifyIcon? trayIcon;
     private OverlayState latestOverlayState;
@@ -84,7 +85,7 @@ public partial class MainWindow : Window
 
         HeaderText.Text = "Profile setup, binding capture, OBS source, and live input diagnostics.";
         StatusText.Text = "Raw Input is attached for keyboard, mouse, and HID flight devices. HID reports are parsed into declared axes, buttons, and hats; WinMM remains as a legacy fallback.";
-        ObsUrlText.Text = $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}";
+        UpdateObsUrlText();
         NewProfileNameTextBox.Text = $"{profile.Name} Copy";
         RefreshAppearanceUi();
         RefreshDesktopOverlayUi();
@@ -143,10 +144,7 @@ public partial class MainWindow : Window
             var source = (HwndSource)PresentationSource.FromVisual(this);
             inputProvider.AttachWindow(source.Handle);
             source.AddHook(WindowMessageHook);
-            if (profile.Runtime.BrowserSourceEnabled)
-            {
-                browserSourceServer.Start();
-            }
+            StartBrowserSourceServer();
 
             await RefreshDevicesAsync();
             inputTimer.Start();
@@ -156,6 +154,58 @@ public partial class MainWindow : Window
             log.Error("Failed to initialize Windows input diagnostics.", exception);
             StatusText.Text = $"Input initialization failed: {exception.Message}";
         }
+    }
+
+    private void StartBrowserSourceServer()
+    {
+        if (!profile.Runtime.BrowserSourceEnabled)
+        {
+            ObsUrlText.Text = "OBS browser source: disabled";
+            return;
+        }
+
+        try
+        {
+            browserSourceServer.Start();
+            UpdateObsUrlText();
+        }
+        catch (HttpListenerException exception)
+        {
+            int originalPort = browserSourceServer.Port;
+            log.Error($"OBS browser source could not start on port {originalPort}. Trying an available fallback port.", exception);
+            TryStartBrowserSourceFallback(originalPort);
+        }
+    }
+
+    private void TryStartBrowserSourceFallback(int originalPort)
+    {
+        try
+        {
+            int fallbackPort = BrowserSourceServer.FindAvailablePort();
+            RuntimeSettings fallbackRuntime = profile.Runtime with
+            {
+                BrowserSourcePort = fallbackPort
+            };
+            browserSourceServer.Dispose();
+            browserSourceServer = new BrowserSourceServer(fallbackRuntime, latestOverlayState);
+            browserSourceServer.Start();
+            UpdateObsUrlText($"Configured port {originalPort} was unavailable; using {fallbackPort} for this session.");
+            FooterStatusText.Text = $"OBS port {originalPort} was unavailable. Use the temporary URL shown above.";
+            log.Info($"OBS browser source fallback started on port {fallbackPort} after port {originalPort} failed.");
+        }
+        catch (Exception exception) when (exception is HttpListenerException or IOException or InvalidOperationException)
+        {
+            log.Error("OBS browser source fallback startup failed.", exception);
+            ObsUrlText.Text = $"OBS browser source unavailable:{Environment.NewLine}{exception.Message}";
+            FooterStatusText.Text = "OBS browser source could not start. Input diagnostics and desktop overlay are still running.";
+        }
+    }
+
+    private void UpdateObsUrlText(string? note = null)
+    {
+        ObsUrlText.Text = string.IsNullOrWhiteSpace(note)
+            ? $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}"
+            : $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}{Environment.NewLine}{note}";
     }
 
     private IntPtr WindowMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)

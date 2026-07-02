@@ -81,6 +81,29 @@ internal static class BrowserSourcePage
               return `rgba(${c.r},${c.g},${c.b},${a})`;
             }
 
+            function applyShadow(effects) {
+              if (!effects?.shadowEnabled) return;
+              ctx.shadowColor = color(effects.shadowColor, 1);
+              ctx.shadowBlur = Math.max(0, effects.shadowWidth || 0);
+              ctx.shadowOffsetX = effects.shadowOffsetX || 0;
+              ctx.shadowOffsetY = effects.shadowOffsetY || 0;
+            }
+
+            function roundedRect(x, y, width, height, radius) {
+              const r = Math.max(0, Math.min(radius || 0, width / 2, height / 2));
+              ctx.beginPath();
+              ctx.moveTo(x + r, y);
+              ctx.lineTo(x + width - r, y);
+              ctx.quadraticCurveTo(x + width, y, x + width, y + r);
+              ctx.lineTo(x + width, y + height - r);
+              ctx.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+              ctx.lineTo(x + r, y + height);
+              ctx.quadraticCurveTo(x, y + height, x, y + height - r);
+              ctx.lineTo(x, y + r);
+              ctx.quadraticCurveTo(x, y, x + r, y);
+              ctx.closePath();
+            }
+
             function draw() {
               const now = performance.now();
               if (now - lastFetchAt > 33) {
@@ -108,6 +131,7 @@ internal static class BrowserSourcePage
               ctx.save();
               ctx.translate(widget.x || 0, widget.y || 0);
               ctx.globalAlpha = widget.connected ? 1 : 0.32;
+              applyShadow(widget.visualEffects);
 
               switch (widget.type) {
                 case 'stick':
@@ -193,14 +217,33 @@ internal static class BrowserSourcePage
             }
 
             function drawStateText(widget) {
+              const effects = widget.textEffects || {};
               const size = widget.fontSize || 34;
               ctx.font = `700 ${size}px Arial, Helvetica, sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
-              ctx.lineWidth = 5;
-              ctx.strokeStyle = color({ r: 0, g: 0, b: 0, a: 210 });
               ctx.fillStyle = color(widget.displayColor, 0.55 + (widget.intensity || 0) * 0.45);
-              ctx.strokeText(widget.text || '', 0, 0);
+              const text = widget.text || '';
+              if (effects.backplateEnabled) {
+                const metrics = ctx.measureText(text);
+                const padding = effects.backplatePadding ?? 10;
+                const width = metrics.width + (padding * 2);
+                const height = size + (padding * 1.2);
+                ctx.save();
+                ctx.shadowColor = 'transparent';
+                ctx.fillStyle = color(effects.backplateColor, 1);
+                roundedRect(-width / 2, -height / 2, width, height, effects.backplateRadius || 0);
+                ctx.fill();
+                ctx.restore();
+              }
+
+              applyShadow(effects);
+              if (effects.outlineEnabled) {
+                ctx.lineWidth = Math.max(0, effects.outlineWidth || 0) * 2;
+                ctx.strokeStyle = color(effects.outlineColor, 1);
+                ctx.strokeText(text, 0, 0);
+              }
+
               ctx.fillText(widget.text || '', 0, 0);
             }
 

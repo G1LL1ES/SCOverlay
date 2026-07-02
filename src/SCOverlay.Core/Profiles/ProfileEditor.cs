@@ -112,6 +112,20 @@ public static class ProfileEditor
         };
     }
 
+    public static OverlayProfile ApplyWidgetEffects(OverlayProfile profile, EffectSettings visualEffects, EffectSettings textEffects)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(visualEffects);
+        ArgumentNullException.ThrowIfNull(textEffects);
+
+        return profile with
+        {
+            Widgets = profile.Widgets
+                .Select(widget => ApplyEffects(widget, ClampEffects(visualEffects), ClampEffects(textEffects)))
+                .ToArray()
+        };
+    }
+
     public static string CreateSafeProfileId(string displayName, IReadOnlyCollection<string> existingIds)
     {
         ArgumentNullException.ThrowIfNull(existingIds);
@@ -539,6 +553,47 @@ public static class ProfileEditor
                 SourceKind = replacementKind
             }
             : widget;
+    }
+
+    private static WidgetDefinition ApplyEffects(WidgetDefinition widget, EffectSettings visualEffects, EffectSettings textEffects)
+    {
+        return widget switch
+        {
+            StickWidgetDefinition stick => stick with
+            {
+                VisualEffects = visualEffects,
+                TextEffects = textEffects
+            },
+            ThrottleWidgetDefinition throttle => throttle with
+            {
+                VisualEffects = visualEffects,
+                TextEffects = textEffects
+            },
+            RollWidgetDefinition roll => roll with
+            {
+                VisualEffects = visualEffects,
+                TextEffects = textEffects
+            },
+            StateTextWidgetDefinition stateText => stateText with
+            {
+                VisualEffects = visualEffects,
+                TextEffects = textEffects
+            },
+            _ => widget
+        };
+    }
+
+    private static EffectSettings ClampEffects(EffectSettings effects)
+    {
+        return effects with
+        {
+            OutlineWidth = Math.Clamp(effects.OutlineWidth, 0.0, 16.0),
+            ShadowWidth = Math.Clamp(effects.ShadowWidth, 0.0, 32.0),
+            ShadowOffsetX = Math.Clamp(effects.ShadowOffsetX, -32.0, 32.0),
+            ShadowOffsetY = Math.Clamp(effects.ShadowOffsetY, -32.0, 32.0),
+            BackplatePadding = Math.Clamp(effects.BackplatePadding, 0.0, 64.0),
+            BackplateRadius = Math.Clamp(effects.BackplateRadius, 0.0, 32.0)
+        };
     }
 
     private static bool Matches(string left, string right)

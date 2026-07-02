@@ -564,12 +564,23 @@ public partial class MainWindow : Window
         UpdateAppearancePreview();
     }
 
+    private void AppearanceEffect_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isLoadingAppearance)
+        {
+            return;
+        }
+
+        UpdateAppearancePreview();
+    }
+
     private async void ApplyAppearanceButton_OnClick(object sender, RoutedEventArgs e)
     {
         try
         {
             AppearanceSettings appearance = BuildAppearanceFromUi();
             profile = ProfileEditor.ApplyAppearance(profile, appearance);
+            profile = ProfileEditor.ApplyWidgetEffects(profile, BuildVisualEffectsFromUi(), BuildTextEffectsFromUi());
             await SaveAndActivateProfileAsync();
             RefreshAppearanceUi();
             FooterStatusText.Text = $"Applied appearance preset '{SelectedAppearancePreset().Name}'.";
@@ -586,6 +597,7 @@ public partial class MainWindow : Window
         try
         {
             profile = ProfileEditor.ApplyAppearance(profile, new AppearanceSettings());
+            profile = ProfileEditor.ApplyWidgetEffects(profile, new EffectSettings(), new EffectSettings());
             await SaveAndActivateProfileAsync();
             RefreshAppearanceUi();
             FooterStatusText.Text = "Appearance reset.";
@@ -720,6 +732,11 @@ public partial class MainWindow : Window
             AppearancePresetComboBox.SelectedItem = selected;
             AppearanceScaleSlider.Value = profile.Appearance.WidgetScale;
             AppearanceOpacitySlider.Value = profile.Appearance.Opacity;
+            EffectSettings visualEffects = CurrentVisualEffects();
+            EffectSettings textEffects = CurrentTextEffects();
+            AppearanceOutlineCheckBox.IsChecked = visualEffects.OutlineEnabled || textEffects.OutlineEnabled;
+            AppearanceShadowCheckBox.IsChecked = visualEffects.ShadowEnabled || textEffects.ShadowEnabled;
+            AppearanceBackplateCheckBox.IsChecked = textEffects.BackplateEnabled;
             UpdateAppearanceValueText();
             UpdateAppearancePreview();
         }
@@ -952,6 +969,43 @@ public partial class MainWindow : Window
         };
     }
 
+    private EffectSettings BuildVisualEffectsFromUi()
+    {
+        EffectSettings current = CurrentVisualEffects();
+        bool outline = AppearanceOutlineCheckBox.IsChecked == true;
+        bool shadow = AppearanceShadowCheckBox.IsChecked == true;
+        return current with
+        {
+            OutlineEnabled = outline,
+            ShadowEnabled = shadow,
+            BackplateEnabled = false
+        };
+    }
+
+    private EffectSettings BuildTextEffectsFromUi()
+    {
+        EffectSettings current = CurrentTextEffects();
+        bool outline = AppearanceOutlineCheckBox.IsChecked == true;
+        bool shadow = AppearanceShadowCheckBox.IsChecked == true;
+        bool backplate = AppearanceBackplateCheckBox.IsChecked == true;
+        return current with
+        {
+            OutlineEnabled = outline,
+            ShadowEnabled = shadow,
+            BackplateEnabled = backplate
+        };
+    }
+
+    private EffectSettings CurrentVisualEffects()
+    {
+        return profile.Widgets.FirstOrDefault()?.VisualEffects ?? new EffectSettings();
+    }
+
+    private EffectSettings CurrentTextEffects()
+    {
+        return profile.Widgets.FirstOrDefault()?.TextEffects ?? new EffectSettings();
+    }
+
     private AppearancePresetItem SelectedAppearancePreset()
     {
         return AppearancePresetComboBox.SelectedItem is AppearancePresetItem preset
@@ -975,6 +1029,21 @@ public partial class MainWindow : Window
         byte alpha = (byte)Math.Round(preset.ActiveColor.A * Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0));
         AppearancePreviewText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, preset.ActiveColor.R, preset.ActiveColor.G, preset.ActiveColor.B));
         AppearancePreviewText.FontSize = 22 * Math.Clamp(AppearanceScaleSlider.Value, 0.5, 1.75);
+        AppearancePreviewText.Background = AppearanceBackplateCheckBox.IsChecked == true
+            ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(84, 0, 0, 0))
+            : System.Windows.Media.Brushes.Transparent;
+        AppearancePreviewText.Padding = AppearanceBackplateCheckBox.IsChecked == true
+            ? new Thickness(8, 3, 8, 3)
+            : new Thickness(0);
+        AppearancePreviewText.Effect = AppearanceShadowCheckBox.IsChecked == true
+            ? new System.Windows.Media.Effects.DropShadowEffect
+            {
+                Color = Colors.Black,
+                BlurRadius = 8,
+                ShadowDepth = 2,
+                Opacity = 0.65
+            }
+            : null;
     }
 
     private void OnClosed(object? sender, EventArgs e)

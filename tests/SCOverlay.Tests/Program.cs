@@ -550,6 +550,37 @@ runner.Test("Profile editor applies appearance with safe limits", () =>
     Assert.True(ProfileValidator.Validate(updated).IsValid);
 });
 
+runner.Test("Profile editor applies widget effects with safe limits", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var visualEffects = new EffectSettings
+    {
+        OutlineEnabled = false,
+        ShadowEnabled = false,
+        OutlineWidth = 99.0,
+        ShadowWidth = 99.0
+    };
+    var textEffects = new EffectSettings
+    {
+        OutlineEnabled = true,
+        ShadowEnabled = true,
+        BackplateEnabled = true,
+        BackplatePadding = 99.0,
+        BackplateRadius = 99.0
+    };
+
+    OverlayProfile updated = ProfileEditor.ApplyWidgetEffects(profile, visualEffects, textEffects);
+
+    Assert.True(updated.Widgets.All(widget => !widget.VisualEffects.OutlineEnabled));
+    Assert.True(updated.Widgets.All(widget => !widget.VisualEffects.ShadowEnabled));
+    Assert.True(updated.Widgets.All(widget => widget.VisualEffects.OutlineWidth == 16.0));
+    Assert.True(updated.Widgets.All(widget => widget.VisualEffects.ShadowWidth == 32.0));
+    Assert.True(updated.Widgets.All(widget => widget.TextEffects.BackplateEnabled));
+    Assert.True(updated.Widgets.All(widget => widget.TextEffects.BackplatePadding == 64.0));
+    Assert.True(updated.Widgets.All(widget => widget.TextEffects.BackplateRadius == 32.0));
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
 runner.Test("Foundation input provider returns an empty snapshot", () =>
 {
     var provider = new FoundationInputProvider();

@@ -198,17 +198,18 @@ public partial class DesktopOverlayWindow : Window
             Width = radius * 2,
             Height = radius * 2,
             Stroke = display,
-            StrokeThickness = 3
+            StrokeThickness = 3,
+            Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - radius, y - radius);
 
-        Add(new Line { X1 = x - radius, Y1 = y, X2 = x + radius, Y2 = y, Stroke = ring, StrokeThickness = 2 });
-        Add(new Line { X1 = x, Y1 = y - radius, X2 = x, Y2 = y + radius, Stroke = ring, StrokeThickness = 2 });
+        Add(new Line { X1 = x - radius, Y1 = y, X2 = x + radius, Y2 = y, Stroke = ring, StrokeThickness = 2, Effect = ShadowEffect(widget.VisualEffects, opacity) });
+        Add(new Line { X1 = x, Y1 = y - radius, X2 = x, Y2 = y + radius, Stroke = ring, StrokeThickness = 2, Effect = ShadowEffect(widget.VisualEffects, opacity) });
 
         double knobX = x + (widget.XValue * radius);
         double knobY = y - (widget.YValue * radius);
-        Add(new Line { X1 = x, Y1 = y, X2 = knobX, Y2 = knobY, Stroke = Brush(widget.DisplayColor, opacity * 0.7), StrokeThickness = 2 });
+        Add(new Line { X1 = x, Y1 = y, X2 = knobX, Y2 = knobY, Stroke = Brush(widget.DisplayColor, opacity * 0.7), StrokeThickness = 2, Effect = ShadowEffect(widget.VisualEffects, opacity) });
         double knob = 24 + (widget.Activity * 14);
-        Add(new Ellipse { Width = knob, Height = knob, Fill = display }, knobX - (knob / 2.0), knobY - (knob / 2.0));
+        Add(new Ellipse { Width = knob, Height = knob, Fill = display, Effect = ShadowEffect(widget.VisualEffects, opacity) }, knobX - (knob / 2.0), knobY - (knob / 2.0));
     }
 
     private void DrawThrottle(ThrottleWidgetState widget, double centerX, double centerY)
@@ -225,7 +226,8 @@ public partial class DesktopOverlayWindow : Window
             Width = width,
             Height = height,
             Stroke = display,
-            StrokeThickness = 3
+            StrokeThickness = 3,
+            Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - (width / 2.0), y - (height / 2.0));
 
         double ratio = Math.Clamp(widget.FillRatio, 0.0, 1.0);
@@ -234,7 +236,8 @@ public partial class DesktopOverlayWindow : Window
         {
             Width = Math.Max(width - 10, 1),
             Height = fillHeight,
-            Fill = Brush(widget.DisplayColor, opacity * 0.75)
+            Fill = Brush(widget.DisplayColor, opacity * 0.75),
+            Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - (width / 2.0) + 5, y + (height / 2.0) - fillHeight - 5);
     }
 
@@ -258,12 +261,14 @@ public partial class DesktopOverlayWindow : Window
         {
             Data = new PathGeometry(new[] { figure }),
             Stroke = display,
-            StrokeThickness = 5
+            StrokeThickness = 5,
+            Effect = ShadowEffect(widget.VisualEffects, opacity)
         });
 
         var indicator = new Polygon
         {
             Fill = display,
+            Effect = ShadowEffect(widget.VisualEffects, opacity),
             Points = new PointCollection
             {
                 new WpfPoint(0, -height / 2.0),
@@ -286,15 +291,38 @@ public partial class DesktopOverlayWindow : Window
     private void DrawStateText(StateTextWidgetState widget, double centerX, double centerY)
     {
         double opacity = WidgetOpacity(widget) * (0.55 + (widget.Intensity * 0.45));
+        double textX = centerX + widget.X;
+        double textY = centerY + widget.Y;
         var text = new TextBlock
         {
             Text = widget.Text,
             Foreground = Brush(widget.DisplayColor, opacity),
             FontSize = Math.Max(widget.FontSize, 8),
-            FontWeight = FontWeights.Bold
+            FontWeight = FontWeights.Bold,
+            Effect = ShadowEffect(widget.TextEffects, opacity)
         };
         text.Measure(new WpfSize(double.PositiveInfinity, double.PositiveInfinity));
-        Add(text, centerX + widget.X - (text.DesiredSize.Width / 2.0), centerY + widget.Y - (text.DesiredSize.Height / 2.0));
+        double left = textX - (text.DesiredSize.Width / 2.0);
+        double top = textY - (text.DesiredSize.Height / 2.0);
+        if (widget.TextEffects.BackplateEnabled)
+        {
+            double padding = Math.Max(widget.TextEffects.BackplatePadding, 0.0);
+            Add(new WpfRectangle
+            {
+                Width = text.DesiredSize.Width + (padding * 2),
+                Height = text.DesiredSize.Height + (padding * 1.2),
+                RadiusX = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
+                RadiusY = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
+                Fill = Brush(widget.TextEffects.BackplateColor, WidgetOpacity(widget))
+            }, left - padding, top - (padding * 0.6));
+        }
+
+        if (widget.TextEffects.OutlineEnabled && widget.TextEffects.OutlineWidth > 0.0)
+        {
+            AddTextOutline(widget, left, top, text.DesiredSize, opacity);
+        }
+
+        Add(text, left, top);
     }
 
     private void Add(UIElement element)
@@ -318,6 +346,60 @@ public partial class DesktopOverlayWindow : Window
     {
         byte alpha = (byte)Math.Round(Math.Clamp(color.A * Math.Clamp(opacity, 0.0, 1.0), 0.0, 255.0));
         return new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, color.R, color.G, color.B));
+    }
+
+    private void AddTextOutline(StateTextWidgetState widget, double left, double top, WpfSize desiredSize, double opacity)
+    {
+        double offset = Math.Max(widget.TextEffects.OutlineWidth, 1.0);
+        WpfPoint[] offsets =
+        {
+            new(-offset, 0),
+            new(offset, 0),
+            new(0, -offset),
+            new(0, offset),
+            new(-offset, -offset),
+            new(offset, -offset),
+            new(-offset, offset),
+            new(offset, offset)
+        };
+
+        foreach (WpfPoint point in offsets)
+        {
+            var outline = new TextBlock
+            {
+                Text = widget.Text,
+                Foreground = Brush(widget.TextEffects.OutlineColor, opacity),
+                FontSize = Math.Max(widget.FontSize, 8),
+                FontWeight = FontWeights.Bold
+            };
+            outline.Measure(desiredSize);
+            Add(outline, left + point.X, top + point.Y);
+        }
+    }
+
+    private static System.Windows.Media.Effects.DropShadowEffect? ShadowEffect(EffectSettings effects, double opacity)
+    {
+        if (!effects.ShadowEnabled || effects.ShadowWidth <= 0.0)
+        {
+            return null;
+        }
+
+        double depth = Math.Sqrt((effects.ShadowOffsetX * effects.ShadowOffsetX) + (effects.ShadowOffsetY * effects.ShadowOffsetY));
+        double direction = depth <= 0.0
+            ? 315.0
+            : Math.Atan2(-effects.ShadowOffsetY, effects.ShadowOffsetX) * 180.0 / Math.PI;
+        return new System.Windows.Media.Effects.DropShadowEffect
+        {
+            Color = System.Windows.Media.Color.FromArgb(
+                effects.ShadowColor.A,
+                effects.ShadowColor.R,
+                effects.ShadowColor.G,
+                effects.ShadowColor.B),
+            BlurRadius = Math.Max(effects.ShadowWidth, 0.0),
+            Direction = direction,
+            ShadowDepth = depth,
+            Opacity = Math.Clamp(opacity, 0.0, 1.0)
+        };
     }
 
     [DllImport("user32.dll", SetLastError = true)]

@@ -4,6 +4,7 @@ using SCOverlay.Core.Application;
 using SCOverlay.Core.Domain;
 using SCOverlay.Core.Input;
 using SCOverlay.Core.Profiles;
+using SCOverlay.Core.Rendering;
 using SCOverlay.Input;
 
 var runner = new TestRunner();
@@ -258,6 +259,175 @@ runner.Test("Composite axes combine axis and button components with clamping", (
     Assert.Equal(1.0, state.GetAxis("combined"));
 });
 
+runner.Test("Overlay state engine emits typed widget states for default profile", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("D")] = true,
+            [InputSnapshotKeys.KeyboardButton("W")] = true,
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        });
+    var engine = new OverlayStateEngine();
+
+    OverlayState state = engine.BuildState(profile, snapshot);
+
+    Assert.Equal(profile.Id, state.ProfileId);
+    Assert.True(state.Connected);
+    Assert.Equal(6, state.Widgets.Count);
+    Assert.True(state.Widgets.OfType<StickWidgetState>().Any(widget => widget.Id == "strafe-widget"));
+    Assert.True(state.Widgets.OfType<ThrottleWidgetState>().Any(widget => widget.Id == "throttle-widget"));
+    Assert.True(state.Widgets.OfType<RollWidgetState>().Any(widget => widget.Id == "roll-widget"));
+    Assert.True(state.Widgets.OfType<StateTextWidgetState>().Any(widget => widget.Id == "boost-widget" && widget.Active));
+});
+
+runner.Test("Overlay state engine applies deadzone and zero snap", () =>
+{
+    var profile = new OverlayProfile
+    {
+        Id = "deadzone-test",
+        Name = "Deadzone Test",
+        InputSources = new InputSource[]
+        {
+            new JoystickAxisInputSource
+            {
+                Id = "axis",
+                DisplayName = "Axis",
+                DeviceId = "joystick:0",
+                AxisIndex = 0
+            }
+        },
+        Widgets = new WidgetDefinition[]
+        {
+            new ThrottleWidgetDefinition
+            {
+                Id = "throttle",
+                DisplayName = "Throttle",
+                SourceId = "axis",
+                Tuning = new AxisTuning
+                {
+                    Deadzone = 0.10,
+                    InputNoiseGate = 0.02,
+                    ZeroSnapThreshold = 0.001
+                }
+            }
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("joystick:0", 0)] = 0.05
+        },
+        new Dictionary<string, bool>());
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, snapshot);
+    var throttle = state.Widgets.OfType<ThrottleWidgetState>().Single();
+
+    Assert.Equal(0.0, throttle.RawValue);
+    Assert.Equal(0.0, throttle.Value);
+    Assert.True(throttle.Connected);
+});
+
+runner.Test("Overlay state engine smooths axis values across samples", () =>
+{
+    var profile = new OverlayProfile
+    {
+        Id = "smoothing-test",
+        Name = "Smoothing Test",
+        InputSources = new InputSource[]
+        {
+            new JoystickAxisInputSource
+            {
+                Id = "axis",
+                DisplayName = "Axis",
+                DeviceId = "joystick:0",
+                AxisIndex = 0
+            }
+        },
+        Widgets = new WidgetDefinition[]
+        {
+            new ThrottleWidgetDefinition
+            {
+                Id = "throttle",
+                DisplayName = "Throttle",
+                SourceId = "axis",
+                Tuning = new AxisTuning
+                {
+                    InputNoiseGate = 0,
+                    ValueSmoothingSpeed = 2.0,
+                    MaxThrowRatio = 1.0
+                }
+            }
+        }
+    };
+    var engine = new OverlayStateEngine();
+    DateTimeOffset start = DateTimeOffset.UtcNow;
+    engine.BuildState(profile, AxisSnapshot(start, 0.0));
+
+    OverlayState state = engine.BuildState(profile, AxisSnapshot(start.AddMilliseconds(100), 1.0));
+    var throttle = state.Widgets.OfType<ThrottleWidgetState>().Single();
+
+    Assert.True(throttle.Value > 0.0);
+    Assert.True(throttle.Value < 1.0);
+});
+
+runner.Test("Overlay state engine reports joystick widgets disconnected when source is absent", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateHotasReference();
+    OverlayState state = new OverlayStateEngine().BuildState(profile, InputSnapshot.Empty());
+
+    Assert.False(state.Connected);
+    Assert.True(state.Widgets.All(widget => !widget.Connected));
+});
+
+runner.Test("Overlay state engine computes button and axis state text intensity", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true,
+            [InputSnapshotKeys.KeyboardButton("X")] = false
+        });
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, snapshot);
+    var boost = state.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "boost-widget");
+    var brake = state.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "brake-widget");
+
+    Assert.True(boost.Active);
+    Assert.Equal(1.0, boost.Intensity);
+    Assert.False(brake.Active);
+    Assert.Equal(0.0, brake.Intensity);
+});
+
+runner.Test("Overlay state sampler polls input and publishes renderer-neutral state", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var provider = new FakeInputProvider(new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("W")] = true
+        }));
+    var sampler = new OverlayStateSampler(profile, provider, new OverlayStateEngine());
+    int updates = 0;
+    sampler.StateUpdated += (_, _) => updates++;
+
+    OverlayState state = sampler.SampleOnce();
+
+    Assert.Equal(1, provider.PollCount);
+    Assert.Equal(1, updates);
+    Assert.Equal(profile.Id, sampler.CurrentState.ProfileId);
+    Assert.True(state.Widgets.OfType<ThrottleWidgetState>().Single().Value > 0.0);
+});
+
 runner.Test("Browser source URL uses runtime settings", () =>
 {
     var server = new BrowserSourceServer(new RuntimeSettings());
@@ -270,6 +440,17 @@ runner.Test("Browser source URL uses runtime settings", () =>
 });
 
 return runner.Finish();
+
+static InputSnapshot AxisSnapshot(DateTimeOffset timestamp, double value)
+{
+    return new InputSnapshot(
+        timestamp,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("joystick:0", 0)] = value
+        },
+        new Dictionary<string, bool>());
+}
 
 internal sealed class TestRunner
 {
@@ -341,5 +522,36 @@ internal static class Assert
         {
             throw new InvalidOperationException($"Expected collection to contain {expected}.");
         }
+    }
+}
+
+internal sealed class FakeInputProvider : IInputProvider
+{
+    private readonly InputSnapshot snapshot;
+
+    public FakeInputProvider(InputSnapshot snapshot)
+    {
+        this.snapshot = snapshot;
+    }
+
+    public string Name => "Fake Input Provider";
+
+    public int PollCount { get; private set; }
+
+    public ValueTask<IReadOnlyList<InputDeviceInfo>> EnumerateDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        IReadOnlyList<InputDeviceInfo> devices = Array.Empty<InputDeviceInfo>();
+        return ValueTask.FromResult(devices);
+    }
+
+    public InputSnapshot Poll()
+    {
+        PollCount++;
+        return snapshot;
+    }
+
+    public ValueTask<InputCaptureResult> CaptureNextBindingAsync(CancellationToken cancellationToken = default)
+    {
+        throw new NotSupportedException();
     }
 }

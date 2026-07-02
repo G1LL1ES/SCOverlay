@@ -15,6 +15,7 @@ runner.Test("App paths use SCOverlay app-data folder", () =>
     Assert.Equal(AppInfo.AppDataFolderName, Path.GetFileName(paths.DataRoot));
     Assert.Equal("profiles", Path.GetFileName(paths.ProfilesDirectory));
     Assert.Equal("logs", Path.GetFileName(paths.LogsDirectory));
+    Assert.Equal("profile-backups", Path.GetFileName(paths.ProfileBackupsDirectory));
 });
 
 runner.Test("Default profiles are schema current and valid", () =>
@@ -105,7 +106,8 @@ runner.Test("File profile store saves, lists, loads, and validates", () =>
         DataRoot: root,
         ProfilesDirectory: Path.Combine(root, "profiles"),
         LogsDirectory: Path.Combine(root, "logs"),
-        AssetsDirectory: Path.Combine(root, "assets"));
+        AssetsDirectory: Path.Combine(root, "assets"),
+        ProfileBackupsDirectory: Path.Combine(root, "profile-backups"));
     var store = new FileProfileStore(paths);
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
 
@@ -117,6 +119,29 @@ runner.Test("File profile store saves, lists, loads, and validates", () =>
     Assert.Equal(profile.Id, loaded.Id);
     Assert.True(loaded.InputSources.OfType<KeyboardKeyInputSource>().Any());
     Assert.True(ProfileValidator.Validate(loaded).IsValid);
+});
+
+runner.Test("File profile store creates rotating backups before overwriting profiles", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    AppPaths paths = TestPaths(root);
+    var store = new FileProfileStore(paths);
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+
+    store.SaveAsync(profile).AsTask().GetAwaiter().GetResult();
+    OverlayProfile renamed = profile with
+    {
+        Name = "Renamed KBM"
+    };
+    store.SaveAsync(renamed).AsTask().GetAwaiter().GetResult();
+
+    string[] backups = Directory.GetFiles(paths.ProfileBackupsDirectory, "kbm-default.*.json");
+    Assert.Equal(1, backups.Length);
+    string backupJson = File.ReadAllText(backups[0]);
+    Assert.True(backupJson.Contains("\"name\": \"Keyboard and Mouse Default\"", StringComparison.Ordinal));
+
+    OverlayProfile loaded = store.LoadAsync("kbm-default").AsTask().GetAwaiter().GetResult();
+    Assert.Equal("Renamed KBM", loaded.Name);
 });
 
 runner.Test("App settings store saves and loads active profile and desktop overlay settings", () =>
@@ -179,6 +204,7 @@ runner.Test("Profile bootstrapper repairs empty default profile files", () =>
 
     Assert.Equal("kbm-default", repaired.Id);
     Assert.True(repaired.InputSources.Count > 0);
+    Assert.True(Directory.GetFiles(paths.ProfileBackupsDirectory, "kbm-default.*.invalid.json").Length == 1);
 });
 
 runner.Test("Profile migrator restores KBM alternates for old direct joystick axis profiles", () =>
@@ -925,7 +951,8 @@ static AppPaths TestPaths(string root)
         DataRoot: root,
         ProfilesDirectory: Path.Combine(root, "profiles"),
         LogsDirectory: Path.Combine(root, "logs"),
-        AssetsDirectory: Path.Combine(root, "assets"));
+        AssetsDirectory: Path.Combine(root, "assets"),
+        ProfileBackupsDirectory: Path.Combine(root, "profile-backups"));
 }
 
 static InputSnapshot AxisSnapshot(DateTimeOffset timestamp, double value)

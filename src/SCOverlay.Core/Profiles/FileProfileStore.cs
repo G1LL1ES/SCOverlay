@@ -5,7 +5,9 @@ namespace SCOverlay.Core.Profiles;
 
 public sealed class FileProfileStore : IProfileStore
 {
+    private const int BackupsPerProfileLimit = 10;
     private readonly string profilesDirectory;
+    private readonly string profileBackupsDirectory;
     private readonly JsonSerializerOptions jsonOptions;
 
     public FileProfileStore(AppPaths paths)
@@ -13,6 +15,7 @@ public sealed class FileProfileStore : IProfileStore
         ArgumentNullException.ThrowIfNull(paths);
         AppPathProvider.EnsureCreated(paths);
         profilesDirectory = paths.ProfilesDirectory;
+        profileBackupsDirectory = paths.ProfileBackupsDirectory;
         jsonOptions = ProfileJsonSerializerOptions.Create();
     }
 
@@ -56,9 +59,54 @@ public sealed class FileProfileStore : IProfileStore
         ProfileValidator.ThrowIfInvalid(profile);
 
         string path = GetProfilePath(profile.Id);
-        await using FileStream stream = File.Create(path);
-        await JsonSerializer.SerializeAsync(stream, profile, jsonOptions, cancellationToken)
-            .ConfigureAwait(false);
+        await BackupExistingProfileAsync(profile.Id, "pre-save", cancellationToken).ConfigureAwait(false);
+
+        string tempPath = Path.Combine(profilesDirectory, $"{profile.Id}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await using (FileStream stream = File.Create(tempPath))
+            {
+                await JsonSerializer.SerializeAsync(stream, profile, jsonOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            File.Move(tempPath, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    public async ValueTask<string?> BackupExistingProfileAsync(
+        string profileId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string sourcePath = GetProfilePath(profileId);
+        if (!File.Exists(sourcePath))
+        {
+            return null;
+        }
+
+        Directory.CreateDirectory(profileBackupsDirectory);
+        string safeReason = SanitizeBackupReason(reason);
+        string backupPath = Path.Combine(
+            profileBackupsDirectory,
+            $"{profileId}.{DateTimeOffset.UtcNow:yyyyMMddHHmmssfff}.{safeReason}.json");
+
+        await using (FileStream source = File.OpenRead(sourcePath))
+        await using (FileStream destination = File.Create(backupPath))
+        {
+            await source.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
+        }
+
+        PruneBackups(profileId);
+        return backupPath;
     }
 
     private string GetProfilePath(string profileId)
@@ -75,5 +123,35 @@ public sealed class FileProfileStore : IProfileStore
         }
 
         return Path.Combine(profilesDirectory, fileName);
+    }
+
+    private void PruneBackups(string profileId)
+    {
+        FileInfo[] backups = Directory
+            .EnumerateFiles(profileBackupsDirectory, $"{profileId}.*.json")
+            .Select(path => new FileInfo(path))
+            .OrderByDescending(file => file.LastWriteTimeUtc)
+            .ToArray();
+
+        foreach (FileInfo backup in backups.Skip(BackupsPerProfileLimit))
+        {
+            backup.Delete();
+        }
+    }
+
+    private static string SanitizeBackupReason(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return "backup";
+        }
+
+        char[] safe = reason
+            .Trim()
+            .Select(character => char.IsLetterOrDigit(character) || character is '-' or '_' ? character : '-')
+            .ToArray();
+
+        string sanitized = new(safe);
+        return string.IsNullOrWhiteSpace(sanitized) ? "backup" : sanitized;
     }
 }

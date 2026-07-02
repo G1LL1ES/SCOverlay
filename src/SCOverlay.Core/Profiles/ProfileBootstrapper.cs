@@ -10,8 +10,19 @@ public static class ProfileBootstrapper
 
         foreach (OverlayProfile profile in DefaultProfiles.CreateAll())
         {
-            if (!existing.Contains(profile.Id) || !await CanLoadProfileAsync(store, profile.Id, cancellationToken).ConfigureAwait(false))
+            if (!existing.Contains(profile.Id))
             {
+                await store.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
+                continue;
+            }
+
+            if (!await CanLoadProfileAsync(store, profile.Id, cancellationToken).ConfigureAwait(false))
+            {
+                if (store is FileProfileStore fileStore)
+                {
+                    await fileStore.BackupExistingProfileAsync(profile.Id, "invalid", cancellationToken).ConfigureAwait(false);
+                }
+
                 await store.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
             }
         }

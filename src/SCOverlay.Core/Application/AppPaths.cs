@@ -4,7 +4,8 @@ public sealed record AppPaths(
     string DataRoot,
     string ProfilesDirectory,
     string LogsDirectory,
-    string AssetsDirectory);
+    string AssetsDirectory,
+    string ProfileBackupsDirectory);
 
 public static class AppPathProvider
 {
@@ -17,7 +18,8 @@ public static class AppPathProvider
             DataRoot: dataRoot,
             ProfilesDirectory: Path.Combine(dataRoot, "profiles"),
             LogsDirectory: Path.Combine(dataRoot, "logs"),
-            AssetsDirectory: Path.Combine(dataRoot, "assets"));
+            AssetsDirectory: Path.Combine(dataRoot, "assets"),
+            ProfileBackupsDirectory: Path.Combine(dataRoot, "profile-backups"));
     }
 
     public static void EnsureCreated(AppPaths paths)
@@ -28,5 +30,6 @@ public static class AppPathProvider
         Directory.CreateDirectory(paths.ProfilesDirectory);
         Directory.CreateDirectory(paths.LogsDirectory);
         Directory.CreateDirectory(paths.AssetsDirectory);
+        Directory.CreateDirectory(paths.ProfileBackupsDirectory);
     }
 }

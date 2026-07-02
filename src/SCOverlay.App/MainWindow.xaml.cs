@@ -136,9 +136,10 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         inputTimer.Stop();
-        browserSourceServer.Stop();
+        browserSourceServer.Dispose();
         captureCancellation?.Cancel();
         captureCancellation?.Dispose();
+        Application.Current.Shutdown();
     }
 
     private static string FormatRawSnapshot(InputSnapshot snapshot)

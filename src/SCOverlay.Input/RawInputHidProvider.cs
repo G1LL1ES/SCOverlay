@@ -5,7 +5,7 @@ using SCOverlay.Core.Input;
 
 namespace SCOverlay.Input;
 
-public sealed class RawInputHidProvider
+public sealed class RawInputHidProvider : IDisposable
 {
     private readonly ConcurrentDictionary<IntPtr, RawHidDevice> devicesByHandle = new();
     private readonly ConcurrentDictionary<string, double> axes = new(StringComparer.Ordinal);
@@ -163,6 +163,18 @@ public sealed class RawInputHidProvider
             timestamp,
             axes.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
             buttons.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+    }
+
+    public void Dispose()
+    {
+        foreach (RawHidDevice device in devicesByHandle.Values)
+        {
+            device.Dispose();
+        }
+
+        devicesByHandle.Clear();
+        axes.Clear();
+        buttons.Clear();
     }
 
     private static NativeMethods.RawInputDevice CreateRegistration(ushort usagePage, ushort usage, IntPtr windowHandle)

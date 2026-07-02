@@ -3,7 +3,7 @@ using SCOverlay.Core.Input;
 
 namespace SCOverlay.Input;
 
-public sealed class WindowsInputProvider : IInputProvider
+public sealed class WindowsInputProvider : IInputProvider, IDisposable
 {
     public const int RawInputWindowMessage = NativeMethods.WM_INPUT;
 
@@ -149,6 +149,11 @@ public sealed class WindowsInputProvider : IInputProvider
                 }
             }
         }
+    }
+
+    public void Dispose()
+    {
+        hid.Dispose();
     }
 
     private static InputCaptureResult? TryCaptureButton(InputSnapshot baseline, InputSnapshot current)

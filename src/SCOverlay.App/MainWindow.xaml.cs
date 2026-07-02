@@ -801,7 +801,7 @@ public partial class MainWindow : Window
             Text = "SC Overlay",
             Visible = true
         };
-        trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(ShowMainWindow);
+        trayIcon.DoubleClick += (_, _) => Dispatcher.Invoke(BringToFront);
         RebuildTrayMenu();
     }
 
@@ -813,7 +813,7 @@ public partial class MainWindow : Window
         }
 
         Forms.ContextMenuStrip menu = new();
-        menu.Items.Add("Show SC Overlay", null, (_, _) => Dispatcher.Invoke(ShowMainWindow));
+        menu.Items.Add("Show SC Overlay", null, (_, _) => Dispatcher.Invoke(BringToFront));
         menu.Items.Add(
             appSettings.DesktopOverlay.IsVisible ? "Hide Desktop Overlay" : "Show Desktop Overlay",
             null,
@@ -859,7 +859,7 @@ public partial class MainWindow : Window
         oldMenu?.Dispose();
     }
 
-    private void ShowMainWindow()
+    public void BringToFront()
     {
         if (!IsVisible)
         {
@@ -948,6 +948,7 @@ public partial class MainWindow : Window
         }
 
         browserSourceServer.Dispose();
+        inputProvider.Dispose();
         captureCancellation?.Cancel();
         captureCancellation?.Dispose();
         System.Windows.Application.Current.Shutdown();

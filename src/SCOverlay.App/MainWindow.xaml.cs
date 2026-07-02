@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using SCOverlay.BrowserSource;
@@ -30,9 +31,12 @@ public partial class MainWindow : Window
     private readonly JsonSerializerOptions profileJsonOptions;
     private readonly ObservableCollection<ProfileSelectionItem> profileItems = new();
     private readonly ObservableCollection<BindableSourceItem> bindableSourceItems = new();
+    private readonly ObservableCollection<BindingDetailItem> bindingDetailItems = new();
+    private readonly ObservableCollection<AppearancePresetItem> appearancePresetItems = new();
     private AppSettings appSettings;
     private OverlayProfile profile;
     private bool isLoadingProfiles;
+    private bool isLoadingAppearance = true;
     private CancellationTokenSource? captureCancellation;
     private int captureSessionId;
 
@@ -62,10 +66,18 @@ public partial class MainWindow : Window
         ProfileComboBox.ItemsSource = profileItems;
         BindingSourceComboBox.ItemsSource = bindableSourceItems;
         InputSourcesGrid.ItemsSource = bindableSourceItems;
+        BindingDetailComboBox.ItemsSource = bindingDetailItems;
+        AppearancePresetComboBox.ItemsSource = appearancePresetItems;
+        foreach (AppearancePresetItem preset in CreateAppearancePresets())
+        {
+            appearancePresetItems.Add(preset);
+        }
+
         HeaderText.Text = "Profile setup, binding capture, OBS source, and live input diagnostics.";
         StatusText.Text = "Raw Input is attached for keyboard, mouse, and HID flight devices. HID reports are parsed into declared axes, buttons, and hats; WinMM remains as a legacy fallback.";
         ObsUrlText.Text = $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}";
         NewProfileNameTextBox.Text = $"{profile.Name} Copy";
+        RefreshAppearanceUi();
         FooterStatusText.Text = $"Runtime data: {paths.DataRoot}";
         this.log.Info($"SC Overlay initialized with {inputProvider.Name}. Active profile: {profile.Id}. OBS URL: {browserSourceServer.Url}");
 
@@ -229,6 +241,7 @@ public partial class MainWindow : Window
             await settingsStore.SaveAsync(appSettings);
             stateEngine.Reset();
             RefreshBindingUi();
+            RefreshAppearanceUi();
             NewProfileNameTextBox.Text = $"{profile.Name} Copy";
             ProfileStatusText.Text = $"Active: {profile.Name}";
             FooterStatusText.Text = $"Applied profile '{profile.Name}'.";
@@ -255,6 +268,7 @@ public partial class MainWindow : Window
             await SaveAndActivateProfileAsync();
             await RefreshProfilesAsync(profile.Id);
             RefreshBindingUi();
+            RefreshAppearanceUi();
             FooterStatusText.Text = $"Created profile '{profile.Name}'.";
         }
         catch (Exception exception)
@@ -317,6 +331,7 @@ public partial class MainWindow : Window
             await SaveAndActivateProfileAsync();
             await RefreshProfilesAsync(profile.Id);
             RefreshBindingUi();
+            RefreshAppearanceUi();
             FooterStatusText.Text = $"Imported profile '{profile.Name}'.";
         }
         catch (Exception exception)
@@ -370,6 +385,85 @@ public partial class MainWindow : Window
     private void BindingSourceComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         UpdateSelectedBindingText();
+    }
+
+    private async void RemoveSelectedBindingButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (BindingSourceComboBox.SelectedItem is not BindableSourceItem action ||
+            BindingDetailComboBox.SelectedItem is not BindingDetailItem binding)
+        {
+            FooterStatusText.Text = "Select an action binding before removing.";
+            return;
+        }
+
+        try
+        {
+            profile = ProfileEditor.RemoveInputBinding(profile, action.Id, binding.SourceId);
+            await SaveAndActivateProfileAsync();
+            stateEngine.Reset();
+            RefreshBindingUi(action.Id);
+            FooterStatusText.Text = $"Removed binding '{binding.DisplayName}' from '{action.DisplayName}'.";
+            log.Info($"Removed binding '{binding.SourceId}' from '{action.Id}' in profile {profile.Id}.");
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to remove binding.", exception);
+            FooterStatusText.Text = $"Could not remove binding: {exception.Message}";
+        }
+    }
+
+    private void AppearancePresetComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (isLoadingAppearance)
+        {
+            return;
+        }
+
+        UpdateAppearancePreview();
+    }
+
+    private void AppearanceSlider_OnValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (isLoadingAppearance)
+        {
+            return;
+        }
+
+        UpdateAppearanceValueText();
+        UpdateAppearancePreview();
+    }
+
+    private async void ApplyAppearanceButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            AppearanceSettings appearance = BuildAppearanceFromUi();
+            profile = ProfileEditor.ApplyAppearance(profile, appearance);
+            await SaveAndActivateProfileAsync();
+            RefreshAppearanceUi();
+            FooterStatusText.Text = $"Applied appearance preset '{SelectedAppearancePreset().Name}'.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to apply appearance.", exception);
+            FooterStatusText.Text = $"Could not apply appearance: {exception.Message}";
+        }
+    }
+
+    private async void ResetAppearanceButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            profile = ProfileEditor.ApplyAppearance(profile, new AppearanceSettings());
+            await SaveAndActivateProfileAsync();
+            RefreshAppearanceUi();
+            FooterStatusText.Text = "Appearance reset.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to reset appearance.", exception);
+            FooterStatusText.Text = $"Could not reset appearance: {exception.Message}";
+        }
     }
 
     private async void CaptureSelectedBindingButton_OnClick(object sender, RoutedEventArgs e)
@@ -455,11 +549,91 @@ public partial class MainWindow : Window
         if (BindingSourceComboBox.SelectedItem is BindableSourceItem item)
         {
             SelectedBindingText.Text = item.BindingText;
+            RefreshBindingDetailUi(item.Id);
         }
         else
         {
             SelectedBindingText.Text = "(none)";
+            bindingDetailItems.Clear();
         }
+    }
+
+    private void RefreshBindingDetailUi(string actionSourceId)
+    {
+        bindingDetailItems.Clear();
+        InputSource? action = profile.InputSources.FirstOrDefault(source =>
+            SourceIdEquals(source.Id, actionSourceId));
+        if (action is null)
+        {
+            RemoveSelectedBindingButton.IsEnabled = false;
+            return;
+        }
+
+        foreach (BindingDetailItem item in CreateBindingDetails(action))
+        {
+            bindingDetailItems.Add(item);
+        }
+
+        BindingDetailComboBox.SelectedItem = bindingDetailItems.FirstOrDefault();
+        RemoveSelectedBindingButton.IsEnabled = bindingDetailItems.Count > 1;
+    }
+
+    private void RefreshAppearanceUi()
+    {
+        isLoadingAppearance = true;
+        try
+        {
+            AppearancePresetItem selected = appearancePresetItems.FirstOrDefault(item =>
+                string.Equals(item.Id, profile.Appearance.PresetId, StringComparison.OrdinalIgnoreCase)) ??
+                appearancePresetItems.First();
+            AppearancePresetComboBox.SelectedItem = selected;
+            AppearanceScaleSlider.Value = profile.Appearance.WidgetScale;
+            AppearanceOpacitySlider.Value = profile.Appearance.Opacity;
+            UpdateAppearanceValueText();
+            UpdateAppearancePreview();
+        }
+        finally
+        {
+            isLoadingAppearance = false;
+        }
+    }
+
+    private AppearanceSettings BuildAppearanceFromUi()
+    {
+        AppearancePresetItem preset = SelectedAppearancePreset();
+        return new AppearanceSettings
+        {
+            PresetId = preset.Id,
+            RingColor = preset.RingColor,
+            ActiveColor = preset.ActiveColor,
+            WidgetScale = AppearanceScaleSlider.Value,
+            Opacity = AppearanceOpacitySlider.Value
+        };
+    }
+
+    private AppearancePresetItem SelectedAppearancePreset()
+    {
+        return AppearancePresetComboBox.SelectedItem is AppearancePresetItem preset
+            ? preset
+            : appearancePresetItems.FirstOrDefault() ?? new AppearancePresetItem(
+                "clean-hud",
+                "Clean HUD",
+                new RgbaColor(228, 241, 255, 235),
+                new RgbaColor(255, 84, 84, 255));
+    }
+
+    private void UpdateAppearanceValueText()
+    {
+        AppearanceScaleValueText.Text = $"{AppearanceScaleSlider.Value:0.00}x";
+        AppearanceOpacityValueText.Text = $"{AppearanceOpacitySlider.Value:P0}";
+    }
+
+    private void UpdateAppearancePreview()
+    {
+        AppearancePresetItem preset = SelectedAppearancePreset();
+        byte alpha = (byte)Math.Round(preset.ActiveColor.A * Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0));
+        AppearancePreviewText.Foreground = new SolidColorBrush(Color.FromArgb(alpha, preset.ActiveColor.R, preset.ActiveColor.G, preset.ActiveColor.B));
+        AppearancePreviewText.FontSize = 22 * Math.Clamp(AppearanceScaleSlider.Value, 0.5, 1.75);
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -488,7 +662,8 @@ public partial class MainWindow : Window
 
     private static bool IsBindableActionSource(InputSource source)
     {
-        return source is KeyboardKeyInputSource or MouseButtonInputSource or JoystickAxisInputSource or JoystickButtonInputSource or VirtualButtonAxisInputSource or CompositeAxisInputSource;
+        return !ProfileEditor.IsGeneratedBindingSource(source) &&
+            source is KeyboardKeyInputSource or MouseButtonInputSource or JoystickAxisInputSource or JoystickButtonInputSource or VirtualButtonAxisInputSource or CompositeAxisInputSource or CompositeButtonInputSource;
     }
 
     private static InputSourceKind? DetermineCaptureKind(OverlayProfile profile, string sourceId, InputSourceKind fallback)
@@ -592,8 +767,36 @@ public partial class MainWindow : Window
             JoystickButtonInputSource button => $"{button.DeviceId} button {button.ButtonIndex}{(button.Invert ? " inverted" : string.Empty)}",
             VirtualButtonAxisInputSource buttonAxis => $"{buttonAxis.NegativeButtonSourceId} / {buttonAxis.PositiveButtonSourceId}",
             CompositeAxisInputSource composite => $"{composite.Components.Count} components",
+            CompositeButtonInputSource composite => $"{composite.SourceIds.Count} buttons",
             _ => source.GetType().Name
         };
+    }
+
+    private IReadOnlyList<BindingDetailItem> CreateBindingDetails(InputSource action)
+    {
+        return action switch
+        {
+            CompositeAxisInputSource axis => axis.Components
+                .Select(component => CreateBindingDetail(component.SourceId, component.SourceKind))
+                .ToArray(),
+            CompositeButtonInputSource button => button.SourceIds
+                .Select(sourceId => CreateBindingDetail(sourceId, InputSourceKind.Button))
+                .ToArray(),
+            _ => new[]
+            {
+                new BindingDetailItem(action.Id, $"{action.DisplayName}: {FormatInputSource(action)}", action.Kind)
+            }
+        };
+    }
+
+    private BindingDetailItem CreateBindingDetail(string sourceId, InputSourceKind sourceKind)
+    {
+        InputSource? source = profile.InputSources.FirstOrDefault(item =>
+            SourceIdEquals(item.Id, sourceId));
+        string display = source is null
+            ? sourceId
+            : $"{source.DisplayName}: {FormatInputSource(source)}";
+        return new BindingDetailItem(sourceId, display, sourceKind);
     }
 
     private sealed record ProfileSelectionItem(string Id, string Name);
@@ -601,5 +804,20 @@ public partial class MainWindow : Window
     private sealed record BindableSourceItem(string Id, string DisplayName, InputSourceKind SourceKind, InputSourceKind? CaptureKind, string BindingText)
     {
         public string Kind => CaptureKind is null ? "Button or Axis" : CaptureKind.Value.ToString();
+    }
+
+    private sealed record AppearancePresetItem(string Id, string Name, RgbaColor RingColor, RgbaColor ActiveColor);
+
+    private sealed record BindingDetailItem(string SourceId, string DisplayName, InputSourceKind SourceKind);
+
+    private static IReadOnlyList<AppearancePresetItem> CreateAppearancePresets()
+    {
+        return new AppearancePresetItem[]
+        {
+            new("clean-hud", "Clean HUD", new RgbaColor(228, 241, 255, 235), new RgbaColor(255, 84, 84, 255)),
+            new("aegis-blue", "Aegis Blue", new RgbaColor(126, 214, 255, 230), new RgbaColor(70, 176, 255, 255)),
+            new("anvil-amber", "Anvil Amber", new RgbaColor(255, 215, 128, 230), new RgbaColor(255, 164, 64, 255)),
+            new("stealth-green", "Stealth Green", new RgbaColor(148, 255, 191, 220), new RgbaColor(60, 235, 135, 255))
+        };
     }
 }

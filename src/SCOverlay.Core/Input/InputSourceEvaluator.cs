@@ -98,6 +98,7 @@ public static class InputSourceEvaluator
             KeyboardKeyInputSource keyboardKey => snapshot.Buttons.TryGetValue(InputSnapshotKeys.KeyboardButton(keyboardKey.Key), out bool pressed) && pressed,
             MouseButtonInputSource mouseButton => snapshot.Buttons.TryGetValue(InputSnapshotKeys.MouseButton(mouseButton.Button), out bool pressed) && pressed,
             JoystickButtonInputSource joystickButton => EvaluateJoystickButton(joystickButton, snapshot),
+            CompositeButtonInputSource compositeButton => EvaluateCompositeButton(compositeButton, sourceMap, snapshot, axes, buttons, visiting),
             _ => false
         };
 
@@ -171,6 +172,25 @@ public static class InputSourceEvaluator
         }
 
         return source.ClampOutput ? Clamp(value) : value;
+    }
+
+    private static bool EvaluateCompositeButton(
+        CompositeButtonInputSource source,
+        IReadOnlyDictionary<string, InputSource> sourceMap,
+        InputSnapshot snapshot,
+        IDictionary<string, double> axes,
+        IDictionary<string, bool> buttons,
+        ISet<string> visiting)
+    {
+        foreach (string sourceId in source.SourceIds)
+        {
+            if (EvaluateButton(sourceId, sourceMap, snapshot, axes, buttons, visiting))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static double Clamp(double value)

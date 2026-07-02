@@ -27,10 +27,10 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         {
             widgets.Add(widget switch
             {
-                StickWidgetDefinition stick => BuildStick(stick, inputState, inputSnapshot, sourceMap, elapsedSeconds),
-                ThrottleWidgetDefinition throttle => BuildThrottle(throttle, inputState, inputSnapshot, sourceMap, elapsedSeconds),
-                RollWidgetDefinition roll => BuildRoll(roll, inputState, inputSnapshot, sourceMap, elapsedSeconds),
-                StateTextWidgetDefinition stateText => BuildStateText(stateText, inputState, inputSnapshot, sourceMap, elapsedSeconds),
+                StickWidgetDefinition stick => BuildStick(stick, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
+                ThrottleWidgetDefinition throttle => BuildThrottle(throttle, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
+                RollWidgetDefinition roll => BuildRoll(roll, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
+                StateTextWidgetDefinition stateText => BuildStateText(stateText, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
                 _ => throw new InvalidOperationException($"Unsupported widget type {widget.GetType().Name}.")
             });
         }
@@ -48,6 +48,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
     private StickWidgetState BuildStick(
         StickWidgetDefinition widget,
+        AppearanceSettings appearance,
         EvaluatedInputState inputState,
         InputSnapshot snapshot,
         IReadOnlyDictionary<string, InputSource> sourceMap,
@@ -82,9 +83,9 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         bool connected = IsAxisConnected(widget.XSourceId, sourceMap, snapshot) && IsAxisConnected(widget.YSourceId, sourceMap, snapshot);
         double activity = ApplyRamp(magnitude, widget.Tuning.ColorRampExponent);
 
-        return ApplyCommon(widget, new StickWidgetState
+        return ApplyCommon(widget, appearance, new StickWidgetState
         {
-            Size = widget.Size,
+            Size = Scale(widget.Size, appearance),
             RawX = rawX,
             RawY = rawY,
             XValue = x * widget.Tuning.MaxThrowRatio,
@@ -99,6 +100,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
     private ThrottleWidgetState BuildThrottle(
         ThrottleWidgetDefinition widget,
+        AppearanceSettings appearance,
         EvaluatedInputState inputState,
         InputSnapshot snapshot,
         IReadOnlyDictionary<string, InputSource> sourceMap,
@@ -114,10 +116,10 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         double displayValue = value * widget.Tuning.MaxThrowRatio;
         double activity = ApplyRamp(Math.Abs(value), widget.Tuning.ColorRampExponent);
 
-        return ApplyCommon(widget, new ThrottleWidgetState
+        return ApplyCommon(widget, appearance, new ThrottleWidgetState
         {
-            Width = widget.Width,
-            Height = widget.Height,
+            Width = Scale(widget.Width, appearance),
+            Height = Scale(widget.Height, appearance),
             RawValue = rawValue,
             Value = displayValue,
             FillRatio = (displayValue + widget.Tuning.MaxThrowRatio) / (widget.Tuning.MaxThrowRatio * 2.0),
@@ -129,6 +131,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
     private RollWidgetState BuildRoll(
         RollWidgetDefinition widget,
+        AppearanceSettings appearance,
         EvaluatedInputState inputState,
         InputSnapshot snapshot,
         IReadOnlyDictionary<string, InputSource> sourceMap,
@@ -144,10 +147,10 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         double displayValue = value * widget.Tuning.MaxThrowRatio;
         double activity = ApplyRamp(Math.Abs(value), widget.Tuning.ColorRampExponent);
 
-        return ApplyCommon(widget, new RollWidgetState
+        return ApplyCommon(widget, appearance, new RollWidgetState
         {
-            Width = widget.Width,
-            Height = widget.Height,
+            Width = Scale(widget.Width, appearance),
+            Height = Scale(widget.Height, appearance),
             AssetId = widget.AssetId,
             RawValue = rawValue,
             Value = displayValue,
@@ -159,6 +162,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
     private StateTextWidgetState BuildStateText(
         StateTextWidgetDefinition widget,
+        AppearanceSettings appearance,
         EvaluatedInputState inputState,
         InputSnapshot snapshot,
         IReadOnlyDictionary<string, InputSource> sourceMap,
@@ -178,30 +182,33 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
         double activity = ApplyRamp(intensity, widget.Tuning.ColorRampExponent);
 
-        return ApplyCommon(widget, new StateTextWidgetState
+        return ApplyCommon(widget, appearance, new StateTextWidgetState
         {
             Text = widget.Text,
             RawValue = rawValue,
             Active = active,
             Intensity = intensity,
-            FontSize = Lerp(widget.FontSizeOff, widget.FontSizeOn, intensity),
+            FontSize = Scale(Lerp(widget.FontSizeOff, widget.FontSizeOn, intensity), appearance),
             Connected = IsSourceConnected(widget.SourceId, widget.SourceKind, sourceMap, snapshot),
             Activity = activity
         });
     }
 
-    private T ApplyCommon<T>(WidgetDefinition definition, T state)
+    private T ApplyCommon<T>(WidgetDefinition definition, AppearanceSettings appearance, T state)
         where T : WidgetState
     {
+        RgbaColor ringColor = WithOpacity(appearance.RingColor, appearance.Opacity);
+        RgbaColor activeColor = WithOpacity(appearance.ActiveColor, appearance.Opacity);
+
         return state with
         {
             Id = definition.Id,
             DisplayName = definition.DisplayName,
-            X = definition.X,
-            Y = definition.Y,
-            RingColor = definition.RingColor,
-            ActiveColor = definition.ActiveColor,
-            DisplayColor = Blend(definition.RingColor, definition.ActiveColor, state.Activity),
+            X = Scale(definition.X, appearance),
+            Y = Scale(definition.Y, appearance),
+            RingColor = ringColor,
+            ActiveColor = activeColor,
+            DisplayColor = Blend(ringColor, activeColor, state.Activity),
             VisualEffects = definition.VisualEffects,
             TextEffects = definition.TextEffects
         };
@@ -304,6 +311,20 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
             (byte)Math.Round(Lerp(from.A, to.A, t)));
     }
 
+    private static double Scale(double value, AppearanceSettings appearance)
+    {
+        return value * appearance.WidgetScale;
+    }
+
+    private static RgbaColor WithOpacity(RgbaColor color, double opacity)
+    {
+        double alpha = color.A * Math.Clamp(opacity, 0.0, 1.0);
+        return color with
+        {
+            A = (byte)Math.Round(Math.Clamp(alpha, 0.0, 255.0))
+        };
+    }
+
     private static bool IsAxisConnected(
         string sourceId,
         IReadOnlyDictionary<string, InputSource> sourceMap,
@@ -333,7 +354,9 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
                 IsSourceConnected(virtualAxis.NegativeButtonSourceId, InputSourceKind.Button, sourceMap, snapshot) &&
                 IsSourceConnected(virtualAxis.PositiveButtonSourceId, InputSourceKind.Button, sourceMap, snapshot),
             CompositeAxisInputSource compositeAxis => compositeAxis.Components.Count > 0 &&
-                compositeAxis.Components.All(component => IsSourceConnected(component.SourceId, component.SourceKind, sourceMap, snapshot)),
+                compositeAxis.Components.Any(component => IsSourceConnected(component.SourceId, component.SourceKind, sourceMap, snapshot)),
+            CompositeButtonInputSource compositeButton => compositeButton.SourceIds.Count > 0 &&
+                compositeButton.SourceIds.Any(id => IsSourceConnected(id, InputSourceKind.Button, sourceMap, snapshot)),
             _ => false
         };
     }

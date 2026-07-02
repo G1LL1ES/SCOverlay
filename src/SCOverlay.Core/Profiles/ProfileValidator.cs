@@ -33,6 +33,16 @@ public static class ProfileValidator
             issues.Add(new ProfileValidationIssue("runtime.browserSourceHost", "Browser source host is required."));
         }
 
+        if (profile.Appearance.Opacity is < 0.1 or > 1.0)
+        {
+            issues.Add(new ProfileValidationIssue("appearance.opacity", "Appearance opacity must be between 0.1 and 1.0."));
+        }
+
+        if (profile.Appearance.WidgetScale is < 0.5 or > 1.75)
+        {
+            issues.Add(new ProfileValidationIssue("appearance.widgetScale", "Appearance widget scale must be between 0.5 and 1.75."));
+        }
+
         ValidateInputSources(profile.InputSources, issues);
         ValidateWidgets(profile.Widgets, profile.InputSources, issues);
 
@@ -103,6 +113,19 @@ public static class ProfileValidator
                     {
                         issues.Add(new ProfileValidationIssue(path, $"Referenced source '{component.SourceId}' is {target.Kind}, not {component.SourceKind}."));
                     }
+                }
+            }
+
+            if (source is CompositeButtonInputSource compositeButton)
+            {
+                if (compositeButton.SourceIds.Count == 0)
+                {
+                    issues.Add(new ProfileValidationIssue($"inputSources.{source.Id}.sourceIds", "Composite button must include at least one source."));
+                }
+
+                for (int i = 0; i < compositeButton.SourceIds.Count; i++)
+                {
+                    ValidateButtonReference(compositeButton.SourceIds[i], byId, $"inputSources.{source.Id}.sourceIds[{i}]", issues);
                 }
             }
         }

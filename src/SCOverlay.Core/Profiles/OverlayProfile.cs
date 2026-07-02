@@ -13,6 +13,8 @@ public sealed record OverlayProfile
 
     public RuntimeSettings Runtime { get; init; } = new();
 
+    public AppearanceSettings Appearance { get; init; } = new();
+
     public IReadOnlyList<InputSource> InputSources { get; init; } = Array.Empty<InputSource>();
 
     public IReadOnlyList<WidgetDefinition> Widgets { get; init; } = Array.Empty<WidgetDefinition>();

@@ -41,10 +41,11 @@ public static class ProfileEditor
             throw new InvalidOperationException($"'{existing.DisplayName}' cannot use a {capturedSource.Kind} binding because another action or widget expects it to remain {existing.Kind}.");
         }
 
-        InputSource replacement = PreserveIdentity(existing, capturedSource);
-        IReadOnlyList<InputSource> updated = profile.InputSources
-            .Select(source => string.Equals(source.Id, sourceId, StringComparison.OrdinalIgnoreCase) ? replacement : source)
-            .ToArray();
+        IReadOnlyList<InputSource> updated = existing.Kind == capturedSource.Kind
+            ? AddAlternateBinding(profile.InputSources, existing, capturedSource)
+            : profile.InputSources
+                .Select(source => Matches(source.Id, sourceId) ? PreserveIdentity(existing, capturedSource) : source)
+                .ToArray();
         IReadOnlyList<WidgetDefinition> updatedWidgets = profile.Widgets
             .Select(widget => UpdateStateTextSourceKind(widget, sourceId, capturedSource.Kind))
             .ToArray();
@@ -53,6 +54,61 @@ public static class ProfileEditor
         {
             InputSources = updated,
             Widgets = updatedWidgets
+        };
+    }
+
+    public static bool IsGeneratedBindingSource(InputSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        return source.Id.Contains("__binding__", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static OverlayProfile RemoveInputBinding(OverlayProfile profile, string actionSourceId, string bindingSourceId)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (string.IsNullOrWhiteSpace(actionSourceId))
+        {
+            throw new ArgumentException("Action source id is required.", nameof(actionSourceId));
+        }
+
+        if (string.IsNullOrWhiteSpace(bindingSourceId))
+        {
+            throw new ArgumentException("Binding source id is required.", nameof(bindingSourceId));
+        }
+
+        InputSource action = profile.InputSources.FirstOrDefault(source => Matches(source.Id, actionSourceId)) ??
+            throw new ArgumentException($"Input source '{actionSourceId}' does not exist.", nameof(actionSourceId));
+
+        if (action is CompositeAxisInputSource axis)
+        {
+            return RemoveAxisBinding(profile, axis, bindingSourceId);
+        }
+
+        if (action is CompositeButtonInputSource button)
+        {
+            return RemoveButtonBinding(profile, button, bindingSourceId);
+        }
+
+        if (Matches(action.Id, bindingSourceId))
+        {
+            throw new InvalidOperationException($"'{action.DisplayName}' needs at least one binding.");
+        }
+
+        throw new InvalidOperationException($"'{bindingSourceId}' is not a binding for '{action.DisplayName}'.");
+    }
+
+    public static OverlayProfile ApplyAppearance(OverlayProfile profile, AppearanceSettings appearance)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        ArgumentNullException.ThrowIfNull(appearance);
+
+        return profile with
+        {
+            Appearance = appearance with
+            {
+                Opacity = Math.Clamp(appearance.Opacity, 0.1, 1.0),
+                WidgetScale = Math.Clamp(appearance.WidgetScale, 0.5, 1.75)
+            }
         };
     }
 
@@ -111,6 +167,301 @@ public static class ProfileEditor
                 DisplayName = existing.DisplayName
             },
             _ => throw new InvalidOperationException($"Captured source type '{captured.GetType().Name}' is not bindable.")
+        };
+    }
+
+    private static OverlayProfile RemoveAxisBinding(
+        OverlayProfile profile,
+        CompositeAxisInputSource action,
+        string bindingSourceId)
+    {
+        AxisComponent[] remaining = action.Components
+            .Where(component => !Matches(component.SourceId, bindingSourceId))
+            .ToArray();
+        if (remaining.Length == action.Components.Count)
+        {
+            throw new InvalidOperationException($"'{bindingSourceId}' is not a binding for '{action.DisplayName}'.");
+        }
+
+        return ReplaceAfterBindingRemoval(
+            profile,
+            action,
+            bindingSourceId,
+            remaining.Select(component => component.SourceId).ToArray(),
+            remaining.Length == 1 ? remaining[0].SourceId : null,
+            remaining.Length > 1
+                ? action with
+                {
+                    Components = remaining
+                }
+                : null);
+    }
+
+    private static OverlayProfile RemoveButtonBinding(
+        OverlayProfile profile,
+        CompositeButtonInputSource action,
+        string bindingSourceId)
+    {
+        string[] remaining = action.SourceIds
+            .Where(sourceId => !Matches(sourceId, bindingSourceId))
+            .ToArray();
+        if (remaining.Length == action.SourceIds.Count)
+        {
+            throw new InvalidOperationException($"'{bindingSourceId}' is not a binding for '{action.DisplayName}'.");
+        }
+
+        return ReplaceAfterBindingRemoval(
+            profile,
+            action,
+            bindingSourceId,
+            remaining,
+            remaining.Length == 1 ? remaining[0] : null,
+            remaining.Length > 1
+                ? action with
+                {
+                    SourceIds = remaining
+                }
+                : null);
+    }
+
+    private static OverlayProfile ReplaceAfterBindingRemoval(
+        OverlayProfile profile,
+        InputSource action,
+        string removedBindingId,
+        IReadOnlyCollection<string> remainingBindingIds,
+        string? bindingIdToPromote,
+        InputSource? replacementComposite)
+    {
+        if (remainingBindingIds.Count == 0)
+        {
+            throw new InvalidOperationException($"'{action.DisplayName}' needs at least one binding.");
+        }
+
+        InputSource? promoted = null;
+        if (bindingIdToPromote is not null)
+        {
+            promoted = profile.InputSources.FirstOrDefault(source => Matches(source.Id, bindingIdToPromote)) ??
+                throw new InvalidOperationException($"Remaining binding '{bindingIdToPromote}' does not exist.");
+            promoted = PreserveBindingIdentity(promoted, action.Id, action.DisplayName);
+        }
+
+        HashSet<string> removableIds = new(StringComparer.OrdinalIgnoreCase)
+        {
+            removedBindingId
+        };
+        if (bindingIdToPromote is not null)
+        {
+            removableIds.Add(bindingIdToPromote);
+        }
+
+        var updated = new List<InputSource>(profile.InputSources.Count);
+        foreach (InputSource source in profile.InputSources)
+        {
+            if (Matches(source.Id, action.Id))
+            {
+                updated.Add(replacementComposite ?? promoted ?? throw new InvalidOperationException("No replacement binding was produced."));
+                continue;
+            }
+
+            if (removableIds.Contains(source.Id) && IsGeneratedBindingSource(source))
+            {
+                continue;
+            }
+
+            updated.Add(source);
+        }
+
+        return profile with
+        {
+            InputSources = updated
+        };
+    }
+
+    private static IReadOnlyList<InputSource> AddAlternateBinding(
+        IReadOnlyList<InputSource> sources,
+        InputSource existing,
+        InputSource captured)
+    {
+        return existing.Kind switch
+        {
+            InputSourceKind.Axis => AddAlternateAxisBinding(sources, existing, captured),
+            InputSourceKind.Button => AddAlternateButtonBinding(sources, existing, captured),
+            _ => throw new InvalidOperationException($"Unsupported input source kind '{existing.Kind}'.")
+        };
+    }
+
+    private static IReadOnlyList<InputSource> AddAlternateAxisBinding(
+        IReadOnlyList<InputSource> sources,
+        InputSource existing,
+        InputSource captured)
+    {
+        var updated = new List<InputSource>(sources.Count + 2);
+        CompositeAxisInputSource? existingComposite = existing as CompositeAxisInputSource;
+        string capturedId = existingComposite is null
+            ? CreateBindingSourceId(existing.Id, sources, CreateBindingSourceId(existing.Id, sources))
+            : CreateBindingSourceId(existing.Id, sources);
+        InputSource capturedBinding = PreserveBindingIdentity(captured, capturedId, captured.DisplayName);
+
+        foreach (InputSource source in sources)
+        {
+            if (!Matches(source.Id, existing.Id))
+            {
+                updated.Add(source);
+                continue;
+            }
+
+            if (existingComposite is not null)
+            {
+                updated.Add(existingComposite with
+                {
+                    Components = existingComposite.Components
+                        .Append(new AxisComponent
+                        {
+                            SourceId = capturedId,
+                            SourceKind = InputSourceKind.Axis
+                        })
+                        .ToArray()
+                });
+            }
+            else
+            {
+                string originalId = CreateBindingSourceId(existing.Id, sources);
+                InputSource originalBinding = PreserveBindingIdentity(existing, originalId, $"{existing.DisplayName} Existing");
+                updated.Add(originalBinding);
+                updated.Add(new CompositeAxisInputSource
+                {
+                    Id = existing.Id,
+                    DisplayName = existing.DisplayName,
+                    Components = new[]
+                    {
+                        new AxisComponent
+                        {
+                            SourceId = originalId,
+                            SourceKind = InputSourceKind.Axis
+                        },
+                        new AxisComponent
+                        {
+                            SourceId = capturedId,
+                            SourceKind = InputSourceKind.Axis
+                        }
+                    }
+                });
+            }
+        }
+
+        updated.Add(capturedBinding);
+        return updated;
+    }
+
+    private static IReadOnlyList<InputSource> AddAlternateButtonBinding(
+        IReadOnlyList<InputSource> sources,
+        InputSource existing,
+        InputSource captured)
+    {
+        var updated = new List<InputSource>(sources.Count + 2);
+        CompositeButtonInputSource? existingComposite = existing as CompositeButtonInputSource;
+        string capturedId = existingComposite is null
+            ? CreateBindingSourceId(existing.Id, sources, CreateBindingSourceId(existing.Id, sources))
+            : CreateBindingSourceId(existing.Id, sources);
+        InputSource capturedBinding = PreserveBindingIdentity(captured, capturedId, captured.DisplayName);
+
+        foreach (InputSource source in sources)
+        {
+            if (!Matches(source.Id, existing.Id))
+            {
+                updated.Add(source);
+                continue;
+            }
+
+            if (existingComposite is not null)
+            {
+                updated.Add(existingComposite with
+                {
+                    SourceIds = existingComposite.SourceIds.Append(capturedId).ToArray()
+                });
+            }
+            else
+            {
+                string originalId = CreateBindingSourceId(existing.Id, sources);
+                InputSource originalBinding = PreserveBindingIdentity(existing, originalId, $"{existing.DisplayName} Existing");
+                updated.Add(originalBinding);
+                updated.Add(new CompositeButtonInputSource
+                {
+                    Id = existing.Id,
+                    DisplayName = existing.DisplayName,
+                    SourceIds = new[]
+                    {
+                        originalId,
+                        capturedId
+                    }
+                });
+            }
+        }
+
+        updated.Add(capturedBinding);
+        return updated;
+    }
+
+    private static string CreateBindingSourceId(string actionId, IReadOnlyList<InputSource> sources, params string[] reservedIds)
+    {
+        var ids = new HashSet<string>(sources.Select(source => source.Id), StringComparer.OrdinalIgnoreCase);
+        foreach (string reservedId in reservedIds)
+        {
+            ids.Add(reservedId);
+        }
+
+        for (int i = 1; i < 1000; i++)
+        {
+            string candidate = $"{actionId}__binding__{i}";
+            if (!ids.Contains(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        return $"{actionId}__binding__{Guid.NewGuid():N}";
+    }
+
+    private static InputSource PreserveBindingIdentity(InputSource source, string id, string displayName)
+    {
+        return source switch
+        {
+            KeyboardKeyInputSource keyboard => keyboard with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            MouseButtonInputSource mouse => mouse with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            JoystickAxisInputSource axis => axis with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            JoystickButtonInputSource button => button with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            VirtualButtonAxisInputSource virtualAxis => virtualAxis with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            CompositeAxisInputSource compositeAxis => compositeAxis with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            CompositeButtonInputSource compositeButton => compositeButton with
+            {
+                Id = id,
+                DisplayName = displayName
+            },
+            _ => throw new InvalidOperationException($"Source type '{source.GetType().Name}' is not bindable.")
         };
     }
 

@@ -204,15 +204,29 @@
                                            FontSize="12"
                                            Margin="0,11,0,0"
                                            TextWrapping="Wrap" />
+                                <TextBlock Text="Physical binding"
+                                           Foreground="#9FB0BE"
+                                           FontSize="12"
+                                           Margin="0,12,0,5" />
+                                <ComboBox x:Name="BindingDetailComboBox"
+                                          MinHeight="30"
+                                          DisplayMemberPath="DisplayName" />
                             </StackPanel>
 
-                            <Button Grid.Column="4"
-                                    x:Name="CaptureSelectedBindingButton"
-                                    Content="Capture"
-                                    Width="112"
-                                    Height="32"
-                                    Margin="0,22,0,0"
-                                    Click="CaptureSelectedBindingButton_OnClick" />
+                            <StackPanel Grid.Column="4"
+                                        Margin="0,22,0,0">
+                                <Button x:Name="CaptureSelectedBindingButton"
+                                        Content="Capture"
+                                        Width="112"
+                                        Height="32"
+                                        Click="CaptureSelectedBindingButton_OnClick" />
+                                <Button x:Name="RemoveSelectedBindingButton"
+                                        Content="Remove"
+                                        Width="112"
+                                        Height="32"
+                                        Margin="0,8,0,0"
+                                        Click="RemoveSelectedBindingButton_OnClick" />
+                            </StackPanel>
                         </Grid>
                     </Border>
 
@@ -257,6 +271,125 @@
                                                         Width="3*" />
                                 </DataGrid.Columns>
                             </DataGrid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Appearance">
+                <Grid Margin="18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="18" />
+                        <ColumnDefinition Width="3*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border BorderBrush="#26313C"
+                            BorderThickness="1"
+                            Background="#111820"
+                            CornerRadius="4"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="HUD style"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Preset"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,14,0,5" />
+                            <ComboBox x:Name="AppearancePresetComboBox"
+                                      MinHeight="30"
+                                      DisplayMemberPath="Name"
+                                      SelectionChanged="AppearancePresetComboBox_OnSelectionChanged" />
+
+                            <TextBlock x:Name="AppearancePreviewText"
+                                       Foreground="#D5E1EA"
+                                       FontSize="13"
+                                       FontWeight="SemiBold"
+                                       Margin="0,18,0,0"
+                                       Text="BOOST  BRAKE" />
+
+                            <WrapPanel Margin="0,18,0,0">
+                                <Button Content="Apply"
+                                        MinWidth="76"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="ApplyAppearanceButton_OnClick" />
+                                <Button Content="Reset"
+                                        MinWidth="76"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="ResetAppearanceButton_OnClick" />
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            BorderBrush="#26313C"
+                            BorderThickness="1"
+                            Background="#111820"
+                            CornerRadius="4"
+                            Padding="16">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Sizing and opacity"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold" />
+
+                            <Grid Grid.Row="1"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Scale"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceScaleSlider"
+                                        Minimum="0.5"
+                                        Maximum="1.75"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceScaleValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="2"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Opacity"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceOpacitySlider"
+                                        Minimum="0.1"
+                                        Maximum="1.0"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
                         </Grid>
                     </Border>
                 </Grid>

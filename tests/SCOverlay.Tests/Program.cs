@@ -164,6 +164,71 @@ runner.Test("Profile bootstrapper repairs empty default profile files", () =>
     Assert.True(repaired.InputSources.Count > 0);
 });
 
+runner.Test("Profile migrator restores KBM alternates for old direct joystick axis profiles", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    OverlayProfile oldBrokenProfile = profile with
+    {
+        SchemaVersion = 1,
+        InputSources = profile.InputSources
+            .Select<InputSource, InputSource>(source => source.Id == "look-x"
+                ? new JoystickAxisInputSource
+                {
+                    Id = "look-x",
+                    DisplayName = "Look X",
+                    DeviceId = "hid:stick",
+                    AxisIndex = 3
+                }
+                : source)
+            .ToArray()
+    };
+
+    OverlayProfile repaired = ProfileMigrator.Migrate(oldBrokenProfile);
+    var keyboardSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("Right")] = true
+        });
+    var joystickSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("hid:stick", 3)] = 0.5
+        },
+        new Dictionary<string, bool>());
+
+    Assert.True(repaired.InputSources.OfType<CompositeAxisInputSource>().Any(source => source.Id == "look-x"));
+    Assert.Equal(1.0, InputSourceEvaluator.Evaluate(repaired.InputSources, keyboardSnapshot).GetAxis("look-x"));
+    Assert.Equal(0.5, InputSourceEvaluator.Evaluate(repaired.InputSources, joystickSnapshot).GetAxis("look-x"));
+    Assert.True(ProfileValidator.Validate(repaired).IsValid);
+});
+
+runner.Test("Profile migrator does not restore removed KBM alternates for current profiles", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    OverlayProfile currentProfile = profile with
+    {
+        InputSources = profile.InputSources
+            .Select<InputSource, InputSource>(source => source.Id == "look-x"
+                ? new JoystickAxisInputSource
+                {
+                    Id = "look-x",
+                    DisplayName = "Look X",
+                    DeviceId = "hid:stick",
+                    AxisIndex = 3
+                }
+                : source)
+            .ToArray()
+    };
+
+    OverlayProfile migrated = ProfileMigrator.Migrate(currentProfile);
+
+    Assert.True(migrated.InputSources.OfType<JoystickAxisInputSource>().Any(source => source.Id == "look-x"));
+    Assert.False(migrated.InputSources.OfType<CompositeAxisInputSource>().Any(source => source.Id == "look-x"));
+});
+
 runner.Test("Profile editor creates safe profile copies", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
@@ -175,7 +240,7 @@ runner.Test("Profile editor creates safe profile copies", () =>
     Assert.Equal(profile.InputSources.Count, copy.InputSources.Count);
 });
 
-runner.Test("Profile editor replaces direct binding while preserving source identity", () =>
+runner.Test("Profile editor keeps direct button actions active when adding another button binding", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
     var captured = new MouseButtonInputSource
@@ -186,14 +251,22 @@ runner.Test("Profile editor replaces direct binding while preserving source iden
     };
 
     OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "boost", captured);
-    MouseButtonInputSource boost = updated.InputSources.OfType<MouseButtonInputSource>().Single(source => source.Id == "boost");
+    CompositeButtonInputSource boost = updated.InputSources.OfType<CompositeButtonInputSource>().Single(source => source.Id == "boost");
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        });
 
     Assert.Equal("Boost", boost.DisplayName);
-    Assert.Equal("X1", boost.Button);
+    Assert.Equal(2, boost.SourceIds.Count);
+    Assert.True(InputSourceEvaluator.Evaluate(updated.InputSources, snapshot).GetButton("boost"));
     Assert.True(ProfileValidator.Validate(updated).IsValid);
 });
 
-runner.Test("Profile editor can replace a virtual KBM axis action with a joystick axis", () =>
+runner.Test("Profile editor adds joystick axis as an alternate to a virtual KBM axis action", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
     var captured = new JoystickAxisInputSource
@@ -205,14 +278,144 @@ runner.Test("Profile editor can replace a virtual KBM axis action with a joystic
     };
 
     OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "look-x", captured);
-    JoystickAxisInputSource lookX = updated.InputSources.OfType<JoystickAxisInputSource>().Single(source => source.Id == "look-x");
+    CompositeAxisInputSource lookX = updated.InputSources.OfType<CompositeAxisInputSource>().Single(source => source.Id == "look-x");
     StickWidgetDefinition lookWidget = updated.Widgets.OfType<StickWidgetDefinition>().Single(widget => widget.Id == "look-widget");
 
     Assert.Equal("Look X", lookX.DisplayName);
-    Assert.Equal("hid:stick", lookX.DeviceId);
-    Assert.Equal(2, lookX.AxisIndex);
+    Assert.Equal(2, lookX.Components.Count);
     Assert.Equal("look-x", lookWidget.XSourceId);
     Assert.True(ProfileValidator.Validate(updated).IsValid);
+
+    var keyboardSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("Right")] = true
+        });
+    var joystickSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("hid:stick", 2)] = -0.7
+        },
+        new Dictionary<string, bool>());
+
+    Assert.Equal(1.0, InputSourceEvaluator.Evaluate(updated.InputSources, keyboardSnapshot).GetAxis("look-x"));
+    Assert.Equal(-0.7, InputSourceEvaluator.Evaluate(updated.InputSources, joystickSnapshot).GetAxis("look-x"));
+});
+
+runner.Test("Profile editor adds button captures as alternate button bindings", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new JoystickButtonInputSource
+    {
+        Id = "captured-button",
+        DisplayName = "Captured Button",
+        DeviceId = "hid:stick",
+        ButtonIndex = 6
+    };
+
+    OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "boost", captured);
+    CompositeButtonInputSource boost = updated.InputSources.OfType<CompositeButtonInputSource>().Single(source => source.Id == "boost");
+    var keyboardSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        });
+    var joystickSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.JoystickButton("hid:stick", 6)] = true
+        });
+
+    Assert.Equal(2, boost.SourceIds.Count);
+    Assert.True(InputSourceEvaluator.Evaluate(updated.InputSources, keyboardSnapshot).GetButton("boost"));
+    Assert.True(InputSourceEvaluator.Evaluate(updated.InputSources, joystickSnapshot).GetButton("boost"));
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
+runner.Test("Profile editor removes an alternate axis binding and keeps the remaining binding", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new JoystickAxisInputSource
+    {
+        Id = "captured-axis",
+        DisplayName = "Captured Axis",
+        DeviceId = "hid:stick",
+        AxisIndex = 2
+    };
+    OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "look-x", captured);
+    CompositeAxisInputSource composite = updated.InputSources.OfType<CompositeAxisInputSource>().Single(source => source.Id == "look-x");
+    string joystickBindingId = composite.Components
+        .Select(component => component.SourceId)
+        .Single(id => updated.InputSources.OfType<JoystickAxisInputSource>().Any(source => source.Id == id));
+
+    OverlayProfile pruned = ProfileEditor.RemoveInputBinding(updated, "look-x", joystickBindingId);
+    VirtualButtonAxisInputSource lookX = pruned.InputSources.OfType<VirtualButtonAxisInputSource>().Single(source => source.Id == "look-x");
+    var keyboardSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("Right")] = true
+        });
+
+    Assert.Equal("yaw-left", lookX.NegativeButtonSourceId);
+    Assert.False(pruned.InputSources.Any(source => source.Id == joystickBindingId));
+    Assert.Equal(1.0, InputSourceEvaluator.Evaluate(pruned.InputSources, keyboardSnapshot).GetAxis("look-x"));
+    Assert.True(ProfileValidator.Validate(pruned).IsValid);
+});
+
+runner.Test("Profile editor removes an alternate button binding and keeps the remaining binding", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new MouseButtonInputSource
+    {
+        Id = "mouse-x1",
+        DisplayName = "Mouse X1",
+        Button = "X1"
+    };
+    OverlayProfile updated = ProfileEditor.ReplaceInputSource(profile, "boost", captured);
+    CompositeButtonInputSource composite = updated.InputSources.OfType<CompositeButtonInputSource>().Single(source => source.Id == "boost");
+    string mouseBindingId = composite.SourceIds
+        .Single(id => updated.InputSources.OfType<MouseButtonInputSource>().Any(source => source.Id == id));
+
+    OverlayProfile pruned = ProfileEditor.RemoveInputBinding(updated, "boost", mouseBindingId);
+    KeyboardKeyInputSource boost = pruned.InputSources.OfType<KeyboardKeyInputSource>().Single(source => source.Id == "boost");
+    var keyboardSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        });
+
+    Assert.Equal("LeftShift", boost.Key);
+    Assert.False(pruned.InputSources.Any(source => source.Id == mouseBindingId));
+    Assert.True(InputSourceEvaluator.Evaluate(pruned.InputSources, keyboardSnapshot).GetButton("boost"));
+    Assert.True(ProfileValidator.Validate(pruned).IsValid);
+});
+
+runner.Test("Profile editor rejects removing the only action binding", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    bool rejected = false;
+
+    try
+    {
+        ProfileEditor.RemoveInputBinding(profile, "boost", "boost");
+    }
+    catch (InvalidOperationException)
+    {
+        rejected = true;
+    }
+
+    Assert.True(rejected);
 });
 
 runner.Test("Profile editor can replace state text axis with a button", () =>
@@ -282,6 +485,26 @@ runner.Test("Profile editor rejects captures with the wrong source kind", () =>
     }
 
     Assert.True(rejected);
+});
+
+runner.Test("Profile editor applies appearance with safe limits", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var appearance = new AppearanceSettings
+    {
+        PresetId = "test",
+        RingColor = new RgbaColor(10, 20, 30, 200),
+        ActiveColor = new RgbaColor(200, 80, 40, 255),
+        Opacity = 2.0,
+        WidgetScale = 0.1
+    };
+
+    OverlayProfile updated = ProfileEditor.ApplyAppearance(profile, appearance);
+
+    Assert.Equal("test", updated.Appearance.PresetId);
+    Assert.Equal(1.0, updated.Appearance.Opacity);
+    Assert.Equal(0.5, updated.Appearance.WidgetScale);
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
 });
 
 runner.Test("Foundation input provider returns an empty snapshot", () =>
@@ -569,6 +792,38 @@ runner.Test("Overlay state engine computes button and axis state text intensity"
     Assert.Equal(1.0, boost.Intensity);
     Assert.False(brake.Active);
     Assert.Equal(0.0, brake.Intensity);
+});
+
+runner.Test("Overlay state engine applies profile appearance", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault() with
+    {
+        Appearance = new AppearanceSettings
+        {
+            PresetId = "test",
+            RingColor = new RgbaColor(10, 20, 30, 200),
+            ActiveColor = new RgbaColor(200, 80, 40, 255),
+            Opacity = 0.5,
+            WidgetScale = 1.25
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("W")] = true
+        });
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, snapshot);
+    ThrottleWidgetState throttle = state.Widgets.OfType<ThrottleWidgetState>().Single();
+
+    Assert.Equal(56.25, throttle.Width);
+    Assert.Equal(162.5, throttle.Height);
+    Assert.Equal(56.25, throttle.Y);
+    Assert.Equal((byte)10, throttle.RingColor.R);
+    Assert.Equal((byte)100, throttle.RingColor.A);
+    Assert.Equal((byte)128, throttle.ActiveColor.A);
 });
 
 runner.Test("Overlay state sampler polls input and publishes renderer-neutral state", () =>

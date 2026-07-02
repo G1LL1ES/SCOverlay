@@ -9,6 +9,7 @@ namespace SCOverlay.Core.Domain;
 [JsonDerivedType(typeof(JoystickButtonInputSource), "joystickButton")]
 [JsonDerivedType(typeof(VirtualButtonAxisInputSource), "virtualButtonAxis")]
 [JsonDerivedType(typeof(CompositeAxisInputSource), "compositeAxis")]
+[JsonDerivedType(typeof(CompositeButtonInputSource), "compositeButton")]
 public abstract record InputSource
 {
     public string Id { get; init; } = string.Empty;
@@ -72,4 +73,11 @@ public sealed record CompositeAxisInputSource : InputSource
     public IReadOnlyList<AxisComponent> Components { get; init; } = Array.Empty<AxisComponent>();
 
     public bool ClampOutput { get; init; } = true;
+}
+
+public sealed record CompositeButtonInputSource : InputSource
+{
+    public override InputSourceKind Kind => InputSourceKind.Button;
+
+    public IReadOnlyList<string> SourceIds { get; init; } = Array.Empty<string>();
 }

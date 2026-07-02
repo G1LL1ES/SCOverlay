@@ -430,13 +430,54 @@ runner.Test("Overlay state sampler polls input and publishes renderer-neutral st
 
 runner.Test("Browser source URL uses runtime settings", () =>
 {
-    var server = new BrowserSourceServer(new RuntimeSettings());
-    Assert.Equal("http://127.0.0.1:8765/obs.html", server.Url);
+    int port = BrowserSourceServer.FindAvailablePort();
+    var server = new BrowserSourceServer(new RuntimeSettings
+    {
+        BrowserSourcePort = port
+    });
+    Assert.Equal($"http://127.0.0.1:{port}/obs.html", server.Url);
     Assert.False(server.IsRunning);
     server.Start();
     Assert.True(server.IsRunning);
     server.Stop();
     Assert.False(server.IsRunning);
+});
+
+runner.Test("Browser source serves OBS page, state JSON, and assets", () =>
+{
+    int port = BrowserSourceServer.FindAvailablePort();
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    OverlayState state = new OverlayStateEngine().BuildState(profile, new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        }));
+    using var server = new BrowserSourceServer(new RuntimeSettings
+    {
+        BrowserSourcePort = port
+    }, state);
+    using var client = new HttpClient
+    {
+        BaseAddress = new Uri($"http://127.0.0.1:{port}")
+    };
+
+    server.Start();
+    string html = client.GetStringAsync("/obs.html").GetAwaiter().GetResult();
+    string json = client.GetStringAsync("/state").GetAwaiter().GetResult();
+    string assets = client.GetStringAsync("/assets").GetAwaiter().GetResult();
+    string svg = client.GetStringAsync("/assets/roll-indicator-default.svg").GetAwaiter().GetResult();
+    server.UpdateState(OverlayState.Empty("updated-profile"));
+    string updatedJson = client.GetStringAsync("/state").GetAwaiter().GetResult();
+
+    Assert.True(html.Contains("<canvas", StringComparison.OrdinalIgnoreCase));
+    Assert.True(html.Contains("fetch('/state'", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"profileId\":\"kbm-default\"", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"type\":\"stateText\"", StringComparison.Ordinal));
+    Assert.True(assets.Contains("roll-indicator-default", StringComparison.Ordinal));
+    Assert.True(svg.Contains("<svg", StringComparison.OrdinalIgnoreCase));
+    Assert.True(updatedJson.Contains("\"profileId\":\"updated-profile\"", StringComparison.Ordinal));
 });
 
 return runner.Finish();

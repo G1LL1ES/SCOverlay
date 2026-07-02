@@ -6,6 +6,7 @@ using SCOverlay.Core.Application;
 using SCOverlay.Core.Diagnostics;
 using SCOverlay.Core.Input;
 using SCOverlay.Core.Profiles;
+using SCOverlay.Core.Rendering;
 using SCOverlay.Input;
 
 namespace SCOverlay.App;
@@ -16,6 +17,7 @@ public partial class MainWindow : Window
     private readonly OverlayProfile profile;
     private readonly WindowsInputProvider inputProvider;
     private readonly BrowserSourceServer browserSourceServer;
+    private readonly OverlayStateEngine stateEngine;
     private readonly DispatcherTimer inputTimer;
     private CancellationTokenSource? captureCancellation;
 
@@ -25,7 +27,8 @@ public partial class MainWindow : Window
         this.log = log ?? throw new ArgumentNullException(nameof(log));
         profile = OverlayProfile.CreateFoundationDefault();
         inputProvider = new WindowsInputProvider();
-        browserSourceServer = new BrowserSourceServer(profile.Runtime);
+        stateEngine = new OverlayStateEngine();
+        browserSourceServer = new BrowserSourceServer(profile.Runtime, OverlayState.Empty(profile.Id));
         inputTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(50)
@@ -35,9 +38,9 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         StatusText.Text = "Raw Input is attached for keyboard, mouse, and HID flight devices. HID reports are parsed into declared axes, buttons, and hats; WinMM remains as a legacy fallback.";
-        DataRootText.Text = $"Runtime data: {paths.DataRoot}";
+        DataRootText.Text = $"Runtime data: {paths.DataRoot}{Environment.NewLine}OBS browser source: {browserSourceServer.Url}";
         CaptureText.Text = "Click capture, then press a key or mouse button.";
-        this.log.Info($"Input diagnostics initialized with {inputProvider.Name}. OBS placeholder URL: {browserSourceServer.Url}");
+        this.log.Info($"Input diagnostics initialized with {inputProvider.Name}. OBS URL: {browserSourceServer.Url}");
 
         SourceInitialized += OnSourceInitialized;
         Closed += OnClosed;
@@ -50,6 +53,7 @@ public partial class MainWindow : Window
             var source = (HwndSource)PresentationSource.FromVisual(this);
             inputProvider.AttachWindow(source.Handle);
             source.AddHook(WindowMessageHook);
+            browserSourceServer.Start();
             await RefreshDevicesAsync();
             inputTimer.Start();
         }
@@ -92,6 +96,8 @@ public partial class MainWindow : Window
         {
             InputSnapshot snapshot = inputProvider.Poll();
             EvaluatedInputState evaluated = InputSourceEvaluator.Evaluate(profile.InputSources, snapshot);
+            OverlayState overlayState = stateEngine.BuildState(profile, snapshot);
+            browserSourceServer.UpdateState(overlayState);
 
             RawSnapshotText.Text = FormatRawSnapshot(snapshot);
             ProfileValuesText.Text = FormatProfileValues(evaluated);
@@ -130,6 +136,7 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         inputTimer.Stop();
+        browserSourceServer.Stop();
         captureCancellation?.Cancel();
         captureCancellation?.Dispose();
     }

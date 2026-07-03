@@ -7,6 +7,14 @@
   </ItemGroup>
 
   <PropertyGroup>
+    <AssemblyName>SCOverlay</AssemblyName>
+    <Product>SC Overlay</Product>
+    <Company>SC Overlay</Company>
+    <Authors>SC Overlay Contributors</Authors>
+    <Version>0.1.0</Version>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+    <InformationalVersion>0.1.0-preview</InformationalVersion>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>

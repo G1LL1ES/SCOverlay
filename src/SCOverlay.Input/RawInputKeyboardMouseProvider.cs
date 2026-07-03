@@ -5,12 +5,22 @@ using SCOverlay.Core.Input;
 
 namespace SCOverlay.Input;
 
-public sealed class RawInputKeyboardMouseProvider
+public sealed class RawInputKeyboardMouseProvider : IDisposable
 {
     private readonly ConcurrentDictionary<string, bool> buttons = new(StringComparer.Ordinal);
     private readonly object captureLock = new();
+    private readonly NativeMethods.LowLevelHookProc keyboardHookProc;
+    private readonly NativeMethods.LowLevelHookProc mouseHookProc;
+    private IntPtr keyboardHookHandle;
+    private IntPtr mouseHookHandle;
     private TaskCompletionSource<InputCaptureResult>? pendingCapture;
     private CancellationTokenRegistration pendingCaptureRegistration;
+
+    public RawInputKeyboardMouseProvider()
+    {
+        keyboardHookProc = KeyboardHookCallback;
+        mouseHookProc = MouseHookCallback;
+    }
 
     public IReadOnlyList<InputDeviceInfo> EnumerateDevices()
     {
@@ -50,6 +60,8 @@ public sealed class RawInputKeyboardMouseProvider
         {
             throw new InvalidOperationException($"RegisterRawInputDevices failed with Win32 error {Marshal.GetLastWin32Error()}.");
         }
+
+        InstallHooks();
     }
 
     public void ProcessWindowMessage(IntPtr rawInputHandle)
@@ -102,6 +114,7 @@ public sealed class RawInputKeyboardMouseProvider
 
     public InputSnapshot Poll(DateTimeOffset timestamp)
     {
+        PollKeyboardAndMouseState();
         return new InputSnapshot(
             timestamp,
             new Dictionary<string, double>(StringComparer.Ordinal),
@@ -135,10 +148,52 @@ public sealed class RawInputKeyboardMouseProvider
         return new ValueTask<InputCaptureResult>(completion.Task);
     }
 
+    public void Dispose()
+    {
+        pendingCaptureRegistration.Dispose();
+        if (keyboardHookHandle != IntPtr.Zero)
+        {
+            NativeMethods.UnhookWindowsHookEx(keyboardHookHandle);
+            keyboardHookHandle = IntPtr.Zero;
+        }
+
+        if (mouseHookHandle != IntPtr.Zero)
+        {
+            NativeMethods.UnhookWindowsHookEx(mouseHookHandle);
+            mouseHookHandle = IntPtr.Zero;
+        }
+    }
+
+    private void InstallHooks()
+    {
+        if (keyboardHookHandle == IntPtr.Zero)
+        {
+            keyboardHookHandle = NativeMethods.SetWindowsHookExW(
+                NativeMethods.WH_KEYBOARD_LL,
+                keyboardHookProc,
+                IntPtr.Zero,
+                0);
+        }
+
+        if (mouseHookHandle == IntPtr.Zero)
+        {
+            mouseHookHandle = NativeMethods.SetWindowsHookExW(
+                NativeMethods.WH_MOUSE_LL,
+                mouseHookProc,
+                IntPtr.Zero,
+                0);
+        }
+    }
+
     private void ProcessKeyboard(NativeMethods.RawKeyboard keyboard)
     {
         bool pressed = (keyboard.Flags & NativeMethods.RI_KEY_BREAK) == 0;
         string keyName = VirtualKeyNames.FromRawKeyboard(keyboard.VKey, keyboard.MakeCode, keyboard.Flags);
+        ProcessKeyboardButton(keyName, pressed);
+    }
+
+    private void ProcessKeyboardButton(string keyName, bool pressed)
+    {
         buttons[InputSnapshotKeys.KeyboardButton(keyName)] = pressed;
 
         if (pressed)
@@ -178,6 +233,93 @@ public sealed class RawInputKeyboardMouseProvider
         if ((flags & upFlag) != 0)
         {
             buttons[InputSnapshotKeys.MouseButton(buttonName)] = false;
+        }
+    }
+
+    private IntPtr KeyboardHookCallback(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0)
+        {
+            int message = wParam.ToInt32();
+            if (message is NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN or NativeMethods.WM_KEYUP or NativeMethods.WM_SYSKEYUP)
+            {
+                NativeMethods.KeyboardHookStruct keyboard = Marshal.PtrToStructure<NativeMethods.KeyboardHookStruct>(lParam);
+                string keyName = VirtualKeyNames.FromLowLevelKeyboard(keyboard.VirtualKey, keyboard.ScanCode, keyboard.Flags);
+                bool pressed = message is NativeMethods.WM_KEYDOWN or NativeMethods.WM_SYSKEYDOWN;
+                ProcessKeyboardButton(keyName, pressed);
+            }
+        }
+
+        return NativeMethods.CallNextHookEx(keyboardHookHandle, code, wParam, lParam);
+    }
+
+    private IntPtr MouseHookCallback(int code, IntPtr wParam, IntPtr lParam)
+    {
+        if (code >= 0)
+        {
+            int message = wParam.ToInt32();
+            if (message is NativeMethods.WM_LBUTTONDOWN or NativeMethods.WM_LBUTTONUP)
+            {
+                ProcessHookMouseButton("Left", message == NativeMethods.WM_LBUTTONDOWN);
+            }
+            else if (message is NativeMethods.WM_RBUTTONDOWN or NativeMethods.WM_RBUTTONUP)
+            {
+                ProcessHookMouseButton("Right", message == NativeMethods.WM_RBUTTONDOWN);
+            }
+            else if (message is NativeMethods.WM_MBUTTONDOWN or NativeMethods.WM_MBUTTONUP)
+            {
+                ProcessHookMouseButton("Middle", message == NativeMethods.WM_MBUTTONDOWN);
+            }
+            else if (message is NativeMethods.WM_XBUTTONDOWN or NativeMethods.WM_XBUTTONUP)
+            {
+                NativeMethods.MouseHookStruct mouse = Marshal.PtrToStructure<NativeMethods.MouseHookStruct>(lParam);
+                string buttonName = ((mouse.MouseData >> 16) & 0xFFFF) == 2 ? "X2" : "X1";
+                ProcessHookMouseButton(buttonName, message == NativeMethods.WM_XBUTTONDOWN);
+            }
+        }
+
+        return NativeMethods.CallNextHookEx(mouseHookHandle, code, wParam, lParam);
+    }
+
+    private void ProcessHookMouseButton(string buttonName, bool pressed)
+    {
+        buttons[InputSnapshotKeys.MouseButton(buttonName)] = pressed;
+        if (pressed)
+        {
+            TryCompleteCapture(new MouseButtonInputSource
+            {
+                Id = CreateCapturedId("mouse", buttonName),
+                DisplayName = $"Mouse {buttonName}",
+                Button = buttonName
+            }, $"Mouse {buttonName}");
+        }
+    }
+
+    private void PollKeyboardAndMouseState()
+    {
+        foreach (KeyValuePair<string, int> key in VirtualKeyNames.PollableKeys)
+        {
+            MergePolledButton(InputSnapshotKeys.KeyboardButton(key.Key), IsPressed(key.Value), keyboardHookHandle != IntPtr.Zero);
+        }
+
+        bool mouseHookInstalled = mouseHookHandle != IntPtr.Zero;
+        MergePolledButton(InputSnapshotKeys.MouseButton("Left"), IsPressed(0x01), mouseHookInstalled);
+        MergePolledButton(InputSnapshotKeys.MouseButton("Right"), IsPressed(0x02), mouseHookInstalled);
+        MergePolledButton(InputSnapshotKeys.MouseButton("Middle"), IsPressed(0x04), mouseHookInstalled);
+        MergePolledButton(InputSnapshotKeys.MouseButton("X1"), IsPressed(0x05), mouseHookInstalled);
+        MergePolledButton(InputSnapshotKeys.MouseButton("X2"), IsPressed(0x06), mouseHookInstalled);
+    }
+
+    private static bool IsPressed(int virtualKey)
+    {
+        return (NativeMethods.GetAsyncKeyState(virtualKey) & unchecked((short)0x8000)) != 0;
+    }
+
+    private void MergePolledButton(string key, bool pressed, bool hookInstalled)
+    {
+        if (!hookInstalled || pressed)
+        {
+            buttons[key] = pressed;
         }
     }
 

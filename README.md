@@ -16,6 +16,7 @@ Early production test builds.
 - Mixed-device binding capture and profile editing
 - OBS browser source
 - Desktop overlay with tray controls
+- Customizable HUD appearance with presets, colors, opacity, scale, and effects
 - Portable self-contained Windows packaging
 - No third-party runtime dependencies
 - Local file logging under `%AppData%\SCOverlay\logs`
@@ -38,6 +39,24 @@ Early production test builds.
 ```powershell
 dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj
 ```
+
+## Running With Star Citizen
+
+If inputs stop updating when Star Citizen is focused, run SC Overlay as administrator. Star Citizen may run elevated, and Windows blocks lower-privilege apps from observing its focused input.
+
+For development runs:
+
+1. Open Start Menu.
+2. Search for `PowerShell`.
+3. Right-click `Windows PowerShell` and choose `Run as administrator`.
+4. Run:
+
+```powershell
+cd <path-to-SCOverlay>
+dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Release
+```
+
+For the portable build, right-click `SCOverlay.exe` and choose `Run as administrator`, or launch it from an elevated PowerShell window.
 
 ## Package
 

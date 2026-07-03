@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Text.Json;
@@ -550,6 +551,8 @@ public partial class MainWindow : Window
             return;
         }
 
+        ApplyPresetToAppearanceUi(SelectedAppearancePreset());
+        UpdateAppearanceValueText();
         UpdateAppearancePreview();
     }
 
@@ -565,6 +568,16 @@ public partial class MainWindow : Window
     }
 
     private void AppearanceEffect_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isLoadingAppearance)
+        {
+            return;
+        }
+
+        UpdateAppearancePreview();
+    }
+
+    private void AppearanceColorTextBox_OnTextChanged(object sender, TextChangedEventArgs e)
     {
         if (isLoadingAppearance)
         {
@@ -730,6 +743,8 @@ public partial class MainWindow : Window
                 string.Equals(item.Id, profile.Appearance.PresetId, StringComparison.OrdinalIgnoreCase)) ??
                 appearancePresetItems.First();
             AppearancePresetComboBox.SelectedItem = selected;
+            AppearanceRingColorTextBox.Text = FormatColor(profile.Appearance.RingColor);
+            AppearanceActiveColorTextBox.Text = FormatColor(profile.Appearance.ActiveColor);
             AppearanceScaleSlider.Value = profile.Appearance.WidgetScale;
             AppearanceOpacitySlider.Value = profile.Appearance.Opacity;
             EffectSettings visualEffects = CurrentVisualEffects();
@@ -737,6 +752,9 @@ public partial class MainWindow : Window
             AppearanceOutlineCheckBox.IsChecked = visualEffects.OutlineEnabled || textEffects.OutlineEnabled;
             AppearanceShadowCheckBox.IsChecked = visualEffects.ShadowEnabled || textEffects.ShadowEnabled;
             AppearanceBackplateCheckBox.IsChecked = textEffects.BackplateEnabled;
+            AppearanceOutlineWidthSlider.Value = visualEffects.OutlineWidth;
+            AppearanceShadowBlurSlider.Value = visualEffects.ShadowWidth;
+            AppearanceBackplateOpacitySlider.Value = textEffects.BackplateColor.A / 255.0;
             UpdateAppearanceValueText();
             UpdateAppearancePreview();
         }
@@ -959,11 +977,13 @@ public partial class MainWindow : Window
     private AppearanceSettings BuildAppearanceFromUi()
     {
         AppearancePresetItem preset = SelectedAppearancePreset();
+        RgbaColor ringColor = TryParseColor(AppearanceRingColorTextBox.Text, preset.RingColor, out _);
+        RgbaColor activeColor = TryParseColor(AppearanceActiveColorTextBox.Text, preset.ActiveColor, out _);
         return new AppearanceSettings
         {
             PresetId = preset.Id,
-            RingColor = preset.RingColor,
-            ActiveColor = preset.ActiveColor,
+            RingColor = ringColor,
+            ActiveColor = activeColor,
             WidgetScale = AppearanceScaleSlider.Value,
             Opacity = AppearanceOpacitySlider.Value
         };
@@ -977,7 +997,9 @@ public partial class MainWindow : Window
         return current with
         {
             OutlineEnabled = outline,
+            OutlineWidth = AppearanceOutlineWidthSlider.Value,
             ShadowEnabled = shadow,
+            ShadowWidth = AppearanceShadowBlurSlider.Value,
             BackplateEnabled = false
         };
     }
@@ -991,8 +1013,11 @@ public partial class MainWindow : Window
         return current with
         {
             OutlineEnabled = outline,
+            OutlineWidth = AppearanceOutlineWidthSlider.Value,
             ShadowEnabled = shadow,
-            BackplateEnabled = backplate
+            ShadowWidth = AppearanceShadowBlurSlider.Value,
+            BackplateEnabled = backplate,
+            BackplateColor = WithAlpha(current.BackplateColor, AppearanceBackplateOpacitySlider.Value)
         };
     }
 
@@ -1014,24 +1039,41 @@ public partial class MainWindow : Window
                 "clean-hud",
                 "Clean HUD",
                 new RgbaColor(228, 241, 255, 235),
-                new RgbaColor(255, 84, 84, 255));
+                new RgbaColor(255, 84, 84, 255),
+                new EffectSettings(),
+                new EffectSettings());
     }
 
     private void UpdateAppearanceValueText()
     {
         AppearanceScaleValueText.Text = $"{AppearanceScaleSlider.Value:0.00}x";
         AppearanceOpacityValueText.Text = $"{AppearanceOpacitySlider.Value:P0}";
+        AppearanceOutlineWidthValueText.Text = $"{AppearanceOutlineWidthSlider.Value:0.0}px";
+        AppearanceShadowBlurValueText.Text = $"{AppearanceShadowBlurSlider.Value:0}px";
+        AppearanceBackplateOpacityValueText.Text = $"{AppearanceBackplateOpacitySlider.Value:P0}";
     }
 
     private void UpdateAppearancePreview()
     {
         AppearancePresetItem preset = SelectedAppearancePreset();
-        byte alpha = (byte)Math.Round(preset.ActiveColor.A * Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0));
-        AppearancePreviewText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, preset.ActiveColor.R, preset.ActiveColor.G, preset.ActiveColor.B));
+        RgbaColor ringColor = TryParseColor(AppearanceRingColorTextBox.Text, preset.RingColor, out bool ringValid);
+        RgbaColor activeColor = TryParseColor(AppearanceActiveColorTextBox.Text, preset.ActiveColor, out bool activeValid);
+        AppearanceRingColorSwatch.Background = Brush(ringColor, 1.0);
+        AppearanceActiveColorSwatch.Background = Brush(activeColor, 1.0);
+        AppearanceRingColorTextBox.BorderBrush = ringValid ? System.Windows.SystemColors.ControlDarkBrush : System.Windows.Media.Brushes.IndianRed;
+        AppearanceActiveColorTextBox.BorderBrush = activeValid ? System.Windows.SystemColors.ControlDarkBrush : System.Windows.Media.Brushes.IndianRed;
+
+        byte alpha = (byte)Math.Round(activeColor.A * Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0));
+        AppearancePreviewText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, activeColor.R, activeColor.G, activeColor.B));
         AppearancePreviewText.FontSize = 22 * Math.Clamp(AppearanceScaleSlider.Value, 0.5, 1.75);
-        AppearancePreviewText.Background = AppearanceBackplateCheckBox.IsChecked == true
-            ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(84, 0, 0, 0))
+        byte backplateAlpha = (byte)Math.Round(255.0 * Math.Clamp(AppearanceBackplateOpacitySlider.Value, 0.0, 0.8));
+        AppearancePreviewBackplate.Background = AppearanceBackplateCheckBox.IsChecked == true
+            ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(backplateAlpha, 0, 0, 0))
             : System.Windows.Media.Brushes.Transparent;
+        AppearancePreviewBackplate.BorderBrush = Brush(ringColor, 0.45 * AppearanceOpacitySlider.Value);
+        AppearancePreviewBackplate.BorderThickness = AppearanceOutlineCheckBox.IsChecked == true && AppearanceOutlineWidthSlider.Value > 0.0
+            ? new Thickness(Math.Max(1.0, Math.Min(2.0, AppearanceOutlineWidthSlider.Value / 2.0)))
+            : new Thickness(0);
         AppearancePreviewText.Padding = AppearanceBackplateCheckBox.IsChecked == true
             ? new Thickness(8, 3, 8, 3)
             : new Thickness(0);
@@ -1039,11 +1081,81 @@ public partial class MainWindow : Window
             ? new System.Windows.Media.Effects.DropShadowEffect
             {
                 Color = Colors.Black,
-                BlurRadius = 8,
+                BlurRadius = AppearanceShadowBlurSlider.Value,
                 ShadowDepth = 2,
                 Opacity = 0.65
             }
             : null;
+    }
+
+    private void ApplyPresetToAppearanceUi(AppearancePresetItem preset)
+    {
+        AppearanceRingColorTextBox.Text = FormatColor(preset.RingColor);
+        AppearanceActiveColorTextBox.Text = FormatColor(preset.ActiveColor);
+        AppearanceOutlineCheckBox.IsChecked = preset.VisualEffects.OutlineEnabled || preset.TextEffects.OutlineEnabled;
+        AppearanceShadowCheckBox.IsChecked = preset.VisualEffects.ShadowEnabled || preset.TextEffects.ShadowEnabled;
+        AppearanceBackplateCheckBox.IsChecked = preset.TextEffects.BackplateEnabled;
+        AppearanceOutlineWidthSlider.Value = preset.VisualEffects.OutlineWidth;
+        AppearanceShadowBlurSlider.Value = preset.VisualEffects.ShadowWidth;
+        AppearanceBackplateOpacitySlider.Value = preset.TextEffects.BackplateColor.A / 255.0;
+    }
+
+    private static string FormatColor(RgbaColor color)
+    {
+        return color.A == 255
+            ? FormattableString.Invariant($"#{color.R:X2}{color.G:X2}{color.B:X2}")
+            : FormattableString.Invariant($"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2}");
+    }
+
+    private static RgbaColor TryParseColor(string? text, RgbaColor fallback, out bool isValid)
+    {
+        isValid = false;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return fallback;
+        }
+
+        string hex = text.Trim();
+        if (hex.StartsWith("#", StringComparison.Ordinal))
+        {
+            hex = hex[1..];
+        }
+
+        if (hex.Length != 6 && hex.Length != 8)
+        {
+            return fallback;
+        }
+
+        if (!byte.TryParse(hex[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte red) ||
+            !byte.TryParse(hex[2..4], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte green) ||
+            !byte.TryParse(hex[4..6], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out byte blue))
+        {
+            return fallback;
+        }
+
+        byte alpha = 255;
+        if (hex.Length == 8 &&
+            !byte.TryParse(hex[6..8], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out alpha))
+        {
+            return fallback;
+        }
+
+        isValid = true;
+        return new RgbaColor(red, green, blue, alpha);
+    }
+
+    private static RgbaColor WithAlpha(RgbaColor color, double alpha)
+    {
+        return color with
+        {
+            A = (byte)Math.Round(255.0 * Math.Clamp(alpha, 0.0, 1.0))
+        };
+    }
+
+    private static SolidColorBrush Brush(RgbaColor color, double opacity)
+    {
+        byte alpha = (byte)Math.Round(Math.Clamp(color.A * Math.Clamp(opacity, 0.0, 1.0), 0.0, 255.0));
+        return new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, color.R, color.G, color.B));
     }
 
     private void OnClosed(object? sender, EventArgs e)
@@ -1257,7 +1369,13 @@ public partial class MainWindow : Window
         public string Kind => CaptureKind is null ? "Button or Axis" : CaptureKind.Value.ToString();
     }
 
-    private sealed record AppearancePresetItem(string Id, string Name, RgbaColor RingColor, RgbaColor ActiveColor);
+    private sealed record AppearancePresetItem(
+        string Id,
+        string Name,
+        RgbaColor RingColor,
+        RgbaColor ActiveColor,
+        EffectSettings VisualEffects,
+        EffectSettings TextEffects);
 
     private sealed record BindingDetailItem(string SourceId, string DisplayName, InputSourceKind SourceKind);
 
@@ -1265,10 +1383,84 @@ public partial class MainWindow : Window
     {
         return new AppearancePresetItem[]
         {
-            new("clean-hud", "Clean HUD", new RgbaColor(228, 241, 255, 235), new RgbaColor(255, 84, 84, 255)),
-            new("aegis-blue", "Aegis Blue", new RgbaColor(126, 214, 255, 230), new RgbaColor(70, 176, 255, 255)),
-            new("anvil-amber", "Anvil Amber", new RgbaColor(255, 215, 128, 230), new RgbaColor(255, 164, 64, 255)),
-            new("stealth-green", "Stealth Green", new RgbaColor(148, 255, 191, 220), new RgbaColor(60, 235, 135, 255))
+            Preset(
+                "clean-hud",
+                "Clean HUD",
+                new RgbaColor(228, 241, 255, 235),
+                new RgbaColor(255, 84, 84, 255),
+                outline: 2.0,
+                shadow: 3.0,
+                backplate: 0.0),
+            Preset(
+                "crusader-glass",
+                "Crusader Glass",
+                new RgbaColor(185, 239, 255, 230),
+                new RgbaColor(64, 210, 255, 255),
+                outline: 1.5,
+                shadow: 10.0,
+                backplate: 0.24),
+            Preset(
+                "anvil-amber",
+                "Anvil Amber",
+                new RgbaColor(255, 215, 128, 230),
+                new RgbaColor(255, 164, 64, 255),
+                outline: 2.0,
+                shadow: 8.0,
+                backplate: 0.18),
+            Preset(
+                "drake-industrial",
+                "Drake Industrial",
+                new RgbaColor(220, 236, 220, 225),
+                new RgbaColor(255, 192, 72, 255),
+                outline: 3.0,
+                shadow: 6.0,
+                backplate: 0.32),
+            Preset(
+                "stealth-green",
+                "Stealth Green",
+                new RgbaColor(148, 255, 191, 220),
+                new RgbaColor(60, 235, 135, 255),
+                outline: 1.5,
+                shadow: 12.0,
+                backplate: 0.22),
+            Preset(
+                "hostile-red",
+                "Hostile Red",
+                new RgbaColor(255, 204, 204, 220),
+                new RgbaColor(255, 58, 58, 255),
+                outline: 3.0,
+                shadow: 14.0,
+                backplate: 0.28)
         };
+    }
+
+    private static AppearancePresetItem Preset(
+        string id,
+        string name,
+        RgbaColor ringColor,
+        RgbaColor activeColor,
+        double outline,
+        double shadow,
+        double backplate)
+    {
+        var visualEffects = new EffectSettings
+        {
+            OutlineEnabled = outline > 0.0,
+            OutlineWidth = outline,
+            ShadowEnabled = shadow > 0.0,
+            ShadowWidth = shadow,
+            ShadowOffsetX = 0.0,
+            ShadowOffsetY = 2.0,
+            BackplateEnabled = false
+        };
+        var textEffects = visualEffects with
+        {
+            BackplateEnabled = backplate > 0.0,
+            BackplateColor = new RgbaColor(0, 0, 0, (byte)Math.Round(255.0 * Math.Clamp(backplate, 0.0, 1.0))),
+            BackplatePadding = 10.0,
+            BackplateRadius = 6.0
+        };
+
+        return new AppearancePresetItem(id, name, ringColor, activeColor, visualEffects, textEffects);
     }
 }

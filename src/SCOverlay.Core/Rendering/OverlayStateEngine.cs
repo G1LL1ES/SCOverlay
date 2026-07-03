@@ -170,7 +170,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
     {
         WidgetMemory widgetMemory = GetMemory(widget.Id);
         double rawValue = widget.SourceKind == InputSourceKind.Axis
-            ? Math.Abs(inputState.GetAxis(widget.SourceId))
+            ? SignedAxisToUnipolar(inputState.GetAxis(widget.SourceId))
             : inputState.GetButton(widget.SourceId) ? 1.0 : 0.0;
         bool active = rawValue > widget.Tuning.ActivationDeadzone;
         double targetIntensity = active ? Math.Clamp(rawValue, 0.0, 1.0) : 0.0;
@@ -289,6 +289,16 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
     {
         double clamped = Math.Clamp(value, 0.0, 1.0);
         return exponent <= 0.0 ? clamped : Math.Pow(clamped, exponent);
+    }
+
+    private static double SignedAxisToUnipolar(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return 0.0;
+        }
+
+        return Math.Clamp((value + 1.0) / 2.0, 0.0, 1.0);
     }
 
     private static double Lerp(double from, double to, double amount)

@@ -341,12 +341,65 @@
                                       DisplayMemberPath="Name"
                                       SelectionChanged="AppearancePresetComboBox_OnSelectionChanged" />
 
-                            <TextBlock x:Name="AppearancePreviewText"
-                                       Foreground="#D5E1EA"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       Margin="0,18,0,0"
-                                       Text="BOOST  BRAKE" />
+                            <TextBlock Text="Primary color"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,16,0,5" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="AppearanceRingColorSwatch"
+                                        Width="32"
+                                        Height="30"
+                                        BorderBrush="#405060"
+                                        BorderThickness="1"
+                                        CornerRadius="3" />
+                                <TextBox Grid.Column="2"
+                                         x:Name="AppearanceRingColorTextBox"
+                                         MinHeight="30"
+                                         VerticalContentAlignment="Center"
+                                         FontFamily="Consolas"
+                                         TextChanged="AppearanceColorTextBox_OnTextChanged" />
+                            </Grid>
+
+                            <TextBlock Text="Active color"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,12,0,5" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="AppearanceActiveColorSwatch"
+                                        Width="32"
+                                        Height="30"
+                                        BorderBrush="#405060"
+                                        BorderThickness="1"
+                                        CornerRadius="3" />
+                                <TextBox Grid.Column="2"
+                                         x:Name="AppearanceActiveColorTextBox"
+                                         MinHeight="30"
+                                         VerticalContentAlignment="Center"
+                                         FontFamily="Consolas"
+                                         TextChanged="AppearanceColorTextBox_OnTextChanged" />
+                            </Grid>
+
+                            <Border x:Name="AppearancePreviewBackplate"
+                                    Background="Transparent"
+                                    HorizontalAlignment="Left"
+                                    Margin="0,20,0,0"
+                                    CornerRadius="5">
+                                <TextBlock x:Name="AppearancePreviewText"
+                                           Foreground="#D5E1EA"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           Text="BOOST  BRAKE" />
+                            </Border>
 
                             <TextBlock Text="Effects"
                                        Foreground="#F2F6FA"
@@ -400,6 +453,9 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="Sizing and opacity"
@@ -450,6 +506,78 @@
                                         ValueChanged="AppearanceSlider_OnValueChanged" />
                                 <TextBlock Grid.Column="2"
                                            x:Name="AppearanceOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="3"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Outline"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceOutlineWidthSlider"
+                                        Minimum="0"
+                                        Maximum="8"
+                                        TickFrequency="0.5"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceOutlineWidthValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="4"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Shadow"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceShadowBlurSlider"
+                                        Minimum="0"
+                                        Maximum="20"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceShadowBlurValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="5"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Backplate"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceBackplateOpacitySlider"
+                                        Minimum="0"
+                                        Maximum="0.8"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceBackplateOpacityValueText"
                                            Foreground="#D5E1EA"
                                            TextAlignment="Right"
                                            VerticalAlignment="Center" />

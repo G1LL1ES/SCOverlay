@@ -153,6 +153,7 @@ public sealed class WindowsInputProvider : IInputProvider, IDisposable
 
     public void Dispose()
     {
+        keyboardMouse.Dispose();
         hid.Dispose();
     }
 

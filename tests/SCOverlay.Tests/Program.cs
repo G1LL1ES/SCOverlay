@@ -868,6 +868,37 @@ runner.Test("Overlay state engine computes button and axis state text intensity"
     Assert.Equal(0.0, brake.Intensity);
 });
 
+runner.Test("Overlay state engine treats state text axes as unipolar intensity", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateHotasReference();
+    var idleSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("joystick:1", 7)] = -1.0
+        },
+        new Dictionary<string, bool>());
+
+    var activeSnapshot = new InputSnapshot(
+        idleSnapshot.Timestamp.AddMilliseconds(100),
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("joystick:1", 7)] = 1.0
+        },
+        new Dictionary<string, bool>());
+
+    var engine = new OverlayStateEngine();
+    OverlayState idleState = engine.BuildState(profile, idleSnapshot);
+    StateTextWidgetState idleBrake = idleState.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "brake-widget");
+    Assert.False(idleBrake.Active);
+    Assert.Equal(0.0, idleBrake.Intensity);
+
+    OverlayState activeState = engine.BuildState(profile, activeSnapshot);
+    StateTextWidgetState activeBrake = activeState.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "brake-widget");
+    Assert.True(activeBrake.Active);
+    Assert.True(activeBrake.Intensity > 0.0);
+});
+
 runner.Test("Overlay state engine applies profile appearance", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault() with

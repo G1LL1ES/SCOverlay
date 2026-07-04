@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 using SCOverlay.Core.Application;
 using SCOverlay.Core.Domain;
@@ -26,6 +27,7 @@ public partial class DesktopOverlayWindow : Window
     private bool isLocked = true;
     private bool isClickThrough = true;
     private OverlayState? latestState;
+    private readonly Dictionary<string, BitmapImage?> rollImageCache = new(StringComparer.OrdinalIgnoreCase);
 
     public DesktopOverlayWindow()
     {
@@ -191,25 +193,38 @@ public partial class DesktopOverlayWindow : Window
         double y = centerY + widget.Y;
         double opacity = WidgetOpacity(widget);
         MediaBrush display = Brush(widget.DisplayColor, opacity);
-        MediaBrush ring = Brush(widget.RingColor, opacity * 0.35);
+        MediaBrush frame = Brush(widget.FrameDisplayColor, opacity);
+        MediaBrush guide = Brush(widget.FrameDisplayColor, opacity * 0.35);
 
         Add(new Ellipse
         {
             Width = radius * 2,
             Height = radius * 2,
-            Stroke = display,
-            StrokeThickness = 3,
+            Stroke = frame,
+            StrokeThickness = Math.Max(widget.LineThickness, 0.0),
             Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - radius, y - radius);
 
-        Add(new Line { X1 = x - radius, Y1 = y, X2 = x + radius, Y2 = y, Stroke = ring, StrokeThickness = 2, Effect = ShadowEffect(widget.VisualEffects, opacity) });
-        Add(new Line { X1 = x, Y1 = y - radius, X2 = x, Y2 = y + radius, Stroke = ring, StrokeThickness = 2, Effect = ShadowEffect(widget.VisualEffects, opacity) });
+        double guideThickness = Math.Max(widget.LineThickness * 0.66, 0.0);
+        Add(new Line { X1 = x - radius, Y1 = y, X2 = x + radius, Y2 = y, Stroke = guide, StrokeThickness = guideThickness, Effect = ShadowEffect(widget.VisualEffects, opacity) });
+        Add(new Line { X1 = x, Y1 = y - radius, X2 = x, Y2 = y + radius, Stroke = guide, StrokeThickness = guideThickness, Effect = ShadowEffect(widget.VisualEffects, opacity) });
 
-        double knobX = x + (widget.XValue * radius);
-        double knobY = y - (widget.YValue * radius);
-        Add(new Line { X1 = x, Y1 = y, X2 = knobX, Y2 = knobY, Stroke = Brush(widget.DisplayColor, opacity * 0.7), StrokeThickness = 2, Effect = ShadowEffect(widget.VisualEffects, opacity) });
-        double knob = 24 + (widget.Activity * 14);
-        Add(new Ellipse { Width = knob, Height = knob, Fill = display, Effect = ShadowEffect(widget.VisualEffects, opacity) }, knobX - (knob / 2.0), knobY - (knob / 2.0));
+        double offsetX = widget.XValue * radius;
+        double offsetY = -widget.YValue * radius;
+        double distance = Math.Sqrt((offsetX * offsetX) + (offsetY * offsetY));
+        double pillWidth = 20.0 + (widget.Activity * 10.0);
+        double pillLength = Math.Max(pillWidth, distance + pillWidth);
+        double angle = distance <= 0.01 ? 0.0 : Math.Atan2(offsetY, offsetX) * 180.0 / Math.PI;
+        Add(new WpfRectangle
+        {
+            Width = pillLength,
+            Height = pillWidth,
+            RadiusX = pillWidth / 2.0,
+            RadiusY = pillWidth / 2.0,
+            Fill = Brush(widget.DisplayColor, opacity * 0.86),
+            Effect = ShadowEffect(widget.VisualEffects, opacity),
+            RenderTransform = new RotateTransform(angle, pillWidth / 2.0, pillWidth / 2.0)
+        }, x - (pillWidth / 2.0), y - (pillWidth / 2.0));
     }
 
     private void DrawThrottle(ThrottleWidgetState widget, double centerX, double centerY)
@@ -220,25 +235,39 @@ public partial class DesktopOverlayWindow : Window
         double height = Math.Max(widget.Height, 32);
         double opacity = WidgetOpacity(widget);
         MediaBrush display = Brush(widget.DisplayColor, opacity);
+        MediaBrush frame = Brush(widget.FrameDisplayColor, opacity);
 
         Add(new WpfRectangle
         {
             Width = width,
             Height = height,
-            Stroke = display,
-            StrokeThickness = 3,
+            Stroke = frame,
+            StrokeThickness = Math.Max(widget.LineThickness, 0.0),
+            RadiusX = Math.Max(widget.CornerRadius, 0.0),
+            RadiusY = Math.Max(widget.CornerRadius, 0.0),
             Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - (width / 2.0), y - (height / 2.0));
 
         double ratio = Math.Clamp(widget.FillRatio, 0.0, 1.0);
-        double fillHeight = Math.Max((height - 10) * ratio, 0.0);
+        double inset = Math.Max(4.0, widget.LineThickness + 2.0);
+        double innerWidth = Math.Max(width - (inset * 2.0), 1);
+        double innerHeight = Math.Max(height - (inset * 2.0), 1);
+        double centerBand = Math.Min(innerHeight, Math.Max(4.0, widget.LineThickness + 1.0));
+        double travel = Math.Max((innerHeight - centerBand) / 2.0, 0.0);
+        double extension = travel * ratio;
+        double fillHeight = centerBand + extension;
+        double fillTop = widget.Value >= 0.0
+            ? y - (centerBand / 2.0) - extension
+            : y - (centerBand / 2.0);
         Add(new WpfRectangle
         {
-            Width = Math.Max(width - 10, 1),
+            Width = innerWidth,
             Height = fillHeight,
-            Fill = Brush(widget.DisplayColor, opacity * 0.75),
+            RadiusX = Math.Max(widget.CornerRadius - inset, 0.0),
+            RadiusY = Math.Max(widget.CornerRadius - inset, 0.0),
+            Fill = Brush(widget.DisplayColor, opacity * 0.82),
             Effect = ShadowEffect(widget.VisualEffects, opacity)
-        }, x - (width / 2.0) + 5, y + (height / 2.0) - fillHeight - 5);
+        }, x - (width / 2.0) + inset, fillTop);
     }
 
     private void DrawRoll(RollWidgetState widget, double centerX, double centerY)
@@ -249,6 +278,13 @@ public partial class DesktopOverlayWindow : Window
         double height = Math.Max(widget.Height, 60);
         double opacity = WidgetOpacity(widget);
         MediaBrush display = Brush(widget.DisplayColor, opacity);
+        MediaBrush frame = Brush(widget.FrameDisplayColor, opacity);
+
+        if (widget.RenderMode == RollRenderMode.Image)
+        {
+            DrawRollImage(widget, x, y, width, height, opacity, display);
+            return;
+        }
 
         var figure = new PathFigure { StartPoint = new WpfPoint(x - (width / 2.0), y + 18) };
         figure.Segments.Add(new ArcSegment
@@ -260,8 +296,8 @@ public partial class DesktopOverlayWindow : Window
         Add(new Path
         {
             Data = new PathGeometry(new[] { figure }),
-            Stroke = display,
-            StrokeThickness = 5,
+            Stroke = frame,
+            StrokeThickness = Math.Max(widget.LineThickness, 0.0),
             Effect = ShadowEffect(widget.VisualEffects, opacity)
         });
 
@@ -288,11 +324,100 @@ public partial class DesktopOverlayWindow : Window
         Add(indicator);
     }
 
+    private void DrawRollImage(RollWidgetState widget, double x, double y, double width, double height, double opacity, MediaBrush display)
+    {
+        BitmapImage? source = LoadRollImage(widget.AssetId);
+        if (source is not null)
+        {
+            var imageMask = new ImageBrush(source)
+            {
+                Stretch = Stretch.Fill
+            };
+            var tintedImage = new WpfRectangle
+            {
+                Width = width,
+                Height = height,
+                Fill = display,
+                OpacityMask = imageMask,
+                Effect = ShadowEffect(widget.VisualEffects, opacity),
+                RenderTransformOrigin = new WpfPoint(0.5, 0.5),
+                RenderTransform = new RotateTransform(widget.RotationDegrees)
+            };
+            Add(tintedImage, x - (width / 2.0), y - (height / 2.0));
+            return;
+        }
+
+        double scale = Math.Min(width / 160.0, height / 160.0);
+        WpfPoint[] points =
+        {
+            new(0, -62),
+            new(19, -12),
+            new(56, 13),
+            new(18, 19),
+            new(0, 62),
+            new(-18, 19),
+            new(-56, 13),
+            new(-19, -12)
+        };
+
+        var marker = new Polygon
+        {
+            Fill = display,
+            Stroke = Brush(widget.FrameDisplayColor, opacity * 0.28),
+            StrokeThickness = Math.Max(widget.LineThickness, 0.0),
+            Effect = ShadowEffect(widget.VisualEffects, opacity),
+            Points = new PointCollection(points),
+            RenderTransform = new TransformGroup
+            {
+                Children = new TransformCollection
+                {
+                    new ScaleTransform(scale, scale),
+                    new RotateTransform(widget.RotationDegrees),
+                    new TranslateTransform(x, y)
+                }
+            }
+        };
+        Add(marker);
+    }
+
+    private BitmapImage? LoadRollImage(string assetId)
+    {
+        string fileName = string.Equals(assetId, RollAssets.Arrow, StringComparison.OrdinalIgnoreCase)
+            ? "roll_indicator_arrow.png"
+            : "roll_indicator.png";
+        if (rollImageCache.TryGetValue(fileName, out BitmapImage? cached))
+        {
+            return cached;
+        }
+
+        string path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", fileName);
+        if (!System.IO.File.Exists(path))
+        {
+            rollImageCache[fileName] = null;
+            return null;
+        }
+
+        var image = new BitmapImage();
+        image.BeginInit();
+        image.CacheOption = BitmapCacheOption.OnLoad;
+        image.UriSource = new Uri(path, UriKind.Absolute);
+        image.EndInit();
+        image.Freeze();
+        rollImageCache[fileName] = image;
+        return image;
+    }
+
     private void DrawStateText(StateTextWidgetState widget, double centerX, double centerY)
     {
         double opacity = WidgetOpacity(widget) * (0.55 + (widget.Intensity * 0.45));
         double textX = centerX + widget.X;
         double textY = centerY + widget.Y;
+        if (widget.ShakeIntensity > 0.0)
+        {
+            double ticks = Environment.TickCount64;
+            textX += Math.Sin(ticks * 0.095) * 1.8 * widget.ShakeIntensity;
+            textY += Math.Cos(ticks * 0.12) * 1.2 * widget.ShakeIntensity;
+        }
         var text = new TextBlock
         {
             Text = widget.Text,
@@ -313,7 +438,7 @@ public partial class DesktopOverlayWindow : Window
                 Height = text.DesiredSize.Height + (padding * 1.2),
                 RadiusX = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
                 RadiusY = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
-                Fill = Brush(widget.TextEffects.BackplateColor, WidgetOpacity(widget))
+                Fill = Brush(widget.TextEffects.BackplateColor, 1.0)
             }, left - padding, top - (padding * 0.6));
         }
 
@@ -348,6 +473,11 @@ public partial class DesktopOverlayWindow : Window
         return new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, color.R, color.G, color.B));
     }
 
+    private static double AlphaFactor(RgbaColor color)
+    {
+        return Math.Clamp(color.A / 255.0, 0.0, 1.0);
+    }
+
     private void AddTextOutline(StateTextWidgetState widget, double left, double top, WpfSize desiredSize, double opacity)
     {
         double offset = Math.Max(widget.TextEffects.OutlineWidth, 1.0);
@@ -368,7 +498,7 @@ public partial class DesktopOverlayWindow : Window
             var outline = new TextBlock
             {
                 Text = widget.Text,
-                Foreground = Brush(widget.TextEffects.OutlineColor, opacity),
+                Foreground = Brush(widget.TextEffects.OutlineColor, 1.0),
                 FontSize = Math.Max(widget.FontSize, 8),
                 FontWeight = FontWeights.Bold
             };
@@ -391,14 +521,14 @@ public partial class DesktopOverlayWindow : Window
         return new System.Windows.Media.Effects.DropShadowEffect
         {
             Color = System.Windows.Media.Color.FromArgb(
-                effects.ShadowColor.A,
+                255,
                 effects.ShadowColor.R,
                 effects.ShadowColor.G,
                 effects.ShadowColor.B),
             BlurRadius = Math.Max(effects.ShadowWidth, 0.0),
             Direction = direction,
             ShadowDepth = depth,
-            Opacity = Math.Clamp(opacity, 0.0, 1.0)
+            Opacity = AlphaFactor(effects.ShadowColor)
         };
     }
 

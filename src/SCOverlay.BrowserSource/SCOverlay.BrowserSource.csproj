@@ -4,6 +4,13 @@
     <ProjectReference Include="..\SCOverlay.Core\SCOverlay.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Assets\roll_indicator.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Assets\roll_indicator_arrow.png" CopyToOutputDirectory="PreserveNewest" />
+    <EmbeddedResource Include="Assets\roll_indicator.png" />
+    <EmbeddedResource Include="Assets\roll_indicator_arrow.png" />
+  </ItemGroup>
+
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

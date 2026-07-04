@@ -10,7 +10,19 @@ public sealed record AppearanceSettings
 
     public RgbaColor ActiveColor { get; init; } = new(255, 84, 84, 255);
 
+    public RgbaColor FrameColor { get; init; } = new(228, 241, 255, 235);
+
+    public RgbaColor FrameActiveColor { get; init; } = new(255, 84, 84, 255);
+
     public double Opacity { get; init; } = 1.0;
+
+    public double PrimaryOpacity { get; init; } = 1.0;
+
+    public double ActiveOpacity { get; init; } = 1.0;
+
+    public double FramePrimaryOpacity { get; init; } = 1.0;
+
+    public double FrameActiveOpacity { get; init; } = 1.0;
 
     public double WidgetScale { get; init; } = 1.0;
 }

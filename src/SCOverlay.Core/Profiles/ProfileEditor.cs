@@ -97,6 +97,47 @@ public static class ProfileEditor
         throw new InvalidOperationException($"'{bindingSourceId}' is not a binding for '{action.DisplayName}'.");
     }
 
+    public static OverlayProfile SetJoystickAxisInverted(OverlayProfile profile, string sourceId, bool invert)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            throw new ArgumentException("Input source id is required.", nameof(sourceId));
+        }
+
+        bool updated = false;
+        InputSource[] sources = profile.InputSources
+            .Select(source =>
+            {
+                if (!Matches(source.Id, sourceId))
+                {
+                    return source;
+                }
+
+                updated = true;
+                if (source is not JoystickAxisInputSource axis)
+                {
+                    throw new InvalidOperationException($"'{source.DisplayName}' is not a controller axis binding.");
+                }
+
+                return axis with
+                {
+                    Invert = invert
+                };
+            })
+            .ToArray();
+
+        if (!updated)
+        {
+            throw new ArgumentException($"Input source '{sourceId}' does not exist.", nameof(sourceId));
+        }
+
+        return profile with
+        {
+            InputSources = sources
+        };
+    }
+
     public static OverlayProfile ApplyAppearance(OverlayProfile profile, AppearanceSettings appearance)
     {
         ArgumentNullException.ThrowIfNull(profile);
@@ -104,11 +145,92 @@ public static class ProfileEditor
 
         return profile with
         {
-            Appearance = appearance with
+            Appearance = AppearanceSettingsNormalizer.Normalize(appearance)
+        };
+    }
+
+    public static OverlayProfile ApplyWidgetAppearance(
+        OverlayProfile profile,
+        string widgetId,
+        double x,
+        double y,
+        double scale,
+        double opacity,
+        double lineThickness,
+        double throttleCornerRadius,
+        string rollAssetId,
+        double rollMaxRotationDegrees,
+        bool stateTextMaxedShakeEnabled)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (string.IsNullOrWhiteSpace(widgetId))
+        {
+            throw new ArgumentException("Widget id is required.", nameof(widgetId));
+        }
+
+        bool updated = false;
+        WidgetDefinition[] widgets = profile.Widgets
+            .Select(widget =>
             {
-                Opacity = Math.Clamp(appearance.Opacity, 0.1, 1.0),
-                WidgetScale = Math.Clamp(appearance.WidgetScale, 0.5, 1.75)
-            }
+                if (!Matches(widget.Id, widgetId))
+                {
+                    return widget;
+                }
+
+                updated = true;
+                WidgetDefinition common = ApplyCommonWidgetAppearance(widget, x, y, scale, opacity, lineThickness);
+                return common switch
+                {
+                    ThrottleWidgetDefinition throttle => throttle with
+                    {
+                        CornerRadius = Math.Clamp(throttleCornerRadius, 0.0, 40.0)
+                    },
+                    RollWidgetDefinition roll => roll with
+                    {
+                        AssetId = NormalizeRollAssetId(rollAssetId),
+                        RenderMode = string.Equals(NormalizeRollAssetId(rollAssetId), RollAssets.Indicator, StringComparison.OrdinalIgnoreCase)
+                            ? RollRenderMode.Indicator
+                            : RollRenderMode.Image,
+                        MaxRotationDegrees = Math.Clamp(rollMaxRotationDegrees, 5.0, 180.0)
+                    },
+                    StateTextWidgetDefinition stateText => stateText with
+                    {
+                        Tuning = stateText.Tuning with
+                        {
+                            MaxedShakeEnabled = stateTextMaxedShakeEnabled
+                        }
+                    },
+                    _ => common
+                };
+            })
+            .ToArray();
+
+        if (!updated)
+        {
+            throw new ArgumentException($"Widget '{widgetId}' does not exist.", nameof(widgetId));
+        }
+
+        return profile with
+        {
+            Widgets = widgets
+        };
+    }
+
+    public static OverlayProfile ResetWidgetAppearance(OverlayProfile profile, string widgetId)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (string.IsNullOrWhiteSpace(widgetId))
+        {
+            throw new ArgumentException("Widget id is required.", nameof(widgetId));
+        }
+
+        WidgetDefinition existing = profile.Widgets.First(widget => Matches(widget.Id, widgetId));
+        WidgetDefinition defaults = DefaultProfiles.CreateKbmDefault().Widgets.FirstOrDefault(widget => Matches(widget.Id, widgetId)) ?? existing;
+        return profile with
+        {
+            Widgets = profile.Widgets
+                .Select(widget => Matches(widget.Id, widgetId) ? ResetWidgetAppearance(widget, defaults) : widget)
+                .ToArray()
         };
     }
 
@@ -581,6 +703,89 @@ public static class ProfileEditor
             },
             _ => widget
         };
+    }
+
+    private static WidgetDefinition ApplyCommonWidgetAppearance(
+        WidgetDefinition widget,
+        double x,
+        double y,
+        double scale,
+        double opacity,
+        double lineThickness)
+    {
+        return widget switch
+        {
+            StickWidgetDefinition stick => stick with
+            {
+                X = Math.Clamp(x, -1000.0, 1000.0),
+                Y = Math.Clamp(y, -1000.0, 1000.0),
+                Scale = Math.Clamp(scale, 0.25, 3.0),
+                Opacity = Math.Clamp(opacity, 0.0, 1.0),
+                LineThickness = Math.Clamp(lineThickness, 0.0, 20.0)
+            },
+            ThrottleWidgetDefinition throttle => throttle with
+            {
+                X = Math.Clamp(x, -1000.0, 1000.0),
+                Y = Math.Clamp(y, -1000.0, 1000.0),
+                Scale = Math.Clamp(scale, 0.25, 3.0),
+                Opacity = Math.Clamp(opacity, 0.0, 1.0),
+                LineThickness = Math.Clamp(lineThickness, 0.0, 20.0)
+            },
+            RollWidgetDefinition roll => roll with
+            {
+                X = Math.Clamp(x, -1000.0, 1000.0),
+                Y = Math.Clamp(y, -1000.0, 1000.0),
+                Scale = Math.Clamp(scale, 0.25, 3.0),
+                Opacity = Math.Clamp(opacity, 0.0, 1.0),
+                LineThickness = Math.Clamp(lineThickness, 0.0, 20.0)
+            },
+            StateTextWidgetDefinition stateText => stateText with
+            {
+                X = Math.Clamp(x, -1000.0, 1000.0),
+                Y = Math.Clamp(y, -1000.0, 1000.0),
+                Scale = Math.Clamp(scale, 0.25, 3.0),
+                Opacity = Math.Clamp(opacity, 0.0, 1.0),
+                LineThickness = Math.Clamp(lineThickness, 0.0, 20.0)
+            },
+            _ => widget
+        };
+    }
+
+    private static WidgetDefinition ResetWidgetAppearance(WidgetDefinition widget, WidgetDefinition defaults)
+    {
+        WidgetDefinition common = ApplyCommonWidgetAppearance(
+            widget,
+            defaults.X,
+            defaults.Y,
+            defaults.Scale,
+            defaults.Opacity,
+            defaults.LineThickness);
+        return (common, defaults) switch
+        {
+            (ThrottleWidgetDefinition throttle, ThrottleWidgetDefinition defaultThrottle) => throttle with
+            {
+                CornerRadius = defaultThrottle.CornerRadius
+            },
+            (RollWidgetDefinition roll, RollWidgetDefinition defaultRoll) => roll with
+            {
+                AssetId = defaultRoll.AssetId,
+                RenderMode = defaultRoll.RenderMode,
+                MaxRotationDegrees = defaultRoll.MaxRotationDegrees
+            },
+            (StateTextWidgetDefinition stateText, StateTextWidgetDefinition defaultStateText) => stateText with
+            {
+                Tuning = stateText.Tuning with
+                {
+                    MaxedShakeEnabled = defaultStateText.Tuning.MaxedShakeEnabled
+                }
+            },
+            _ => common
+        };
+    }
+
+    private static string NormalizeRollAssetId(string assetId)
+    {
+        return RollAssets.IsKnown(assetId) ? assetId : RollAssets.Gladius;
     }
 
     private static EffectSettings ClampEffects(EffectSettings effects)

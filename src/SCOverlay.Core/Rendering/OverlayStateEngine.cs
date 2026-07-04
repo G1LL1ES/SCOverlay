@@ -85,7 +85,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
         return ApplyCommon(widget, appearance, new StickWidgetState
         {
-            Size = Scale(widget.Size, appearance),
+            Size = ScaleSize(widget.Size, appearance, widget),
             RawX = rawX,
             RawY = rawY,
             XValue = x * widget.Tuning.MaxThrowRatio,
@@ -115,14 +115,18 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
         double displayValue = value * widget.Tuning.MaxThrowRatio;
         double activity = ApplyRamp(Math.Abs(value), widget.Tuning.ColorRampExponent);
+        double fillRatio = widget.Tuning.MaxThrowRatio <= 0.0
+            ? 0.0
+            : Math.Clamp(Math.Abs(displayValue) / widget.Tuning.MaxThrowRatio, 0.0, 1.0);
 
         return ApplyCommon(widget, appearance, new ThrottleWidgetState
         {
-            Width = Scale(widget.Width, appearance),
-            Height = Scale(widget.Height, appearance),
+            Width = ScaleSize(widget.Width, appearance, widget),
+            Height = ScaleSize(widget.Height, appearance, widget),
+            CornerRadius = ScaleSize(widget.CornerRadius, appearance, widget),
             RawValue = rawValue,
             Value = displayValue,
-            FillRatio = (displayValue + widget.Tuning.MaxThrowRatio) / (widget.Tuning.MaxThrowRatio * 2.0),
+            FillRatio = fillRatio,
             Labels = widget.Labels,
             Connected = IsAxisConnected(widget.SourceId, sourceMap, snapshot),
             Activity = activity
@@ -149,12 +153,13 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
 
         return ApplyCommon(widget, appearance, new RollWidgetState
         {
-            Width = Scale(widget.Width, appearance),
-            Height = Scale(widget.Height, appearance),
+            Width = ScaleSize(widget.Width, appearance, widget),
+            Height = ScaleSize(widget.Height, appearance, widget),
             AssetId = widget.AssetId,
+            RenderMode = widget.RenderMode,
             RawValue = rawValue,
             Value = displayValue,
-            RotationDegrees = displayValue * widget.MaxRotationDegrees,
+            RotationDegrees = value * widget.MaxRotationDegrees,
             Connected = IsAxisConnected(widget.SourceId, sourceMap, snapshot),
             Activity = activity
         });
@@ -181,6 +186,9 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         widgetMemory.Initialized = true;
 
         double activity = ApplyRamp(intensity, widget.Tuning.ColorRampExponent);
+        double shakeIntensity = widget.Tuning.MaxedShakeEnabled
+            ? Math.Clamp((intensity - 0.96) / 0.04, 0.0, 1.0)
+            : 0.0;
 
         return ApplyCommon(widget, appearance, new StateTextWidgetState
         {
@@ -188,7 +196,8 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
             RawValue = rawValue,
             Active = active,
             Intensity = intensity,
-            FontSize = Scale(Lerp(widget.FontSizeOff, widget.FontSizeOn, intensity), appearance),
+            ShakeIntensity = shakeIntensity,
+            FontSize = ScaleSize(Lerp(widget.FontSizeOff, widget.FontSizeOn, intensity), appearance, widget),
             Connected = IsSourceConnected(widget.SourceId, widget.SourceKind, sourceMap, snapshot),
             Activity = activity
         });
@@ -197,8 +206,14 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
     private T ApplyCommon<T>(WidgetDefinition definition, AppearanceSettings appearance, T state)
         where T : WidgetState
     {
-        RgbaColor ringColor = WithOpacity(appearance.RingColor, appearance.Opacity);
-        RgbaColor activeColor = WithOpacity(appearance.ActiveColor, appearance.Opacity);
+        RgbaColor ringColor = WithOpacity(appearance.RingColor, appearance.Opacity * appearance.PrimaryOpacity * definition.Opacity);
+        RgbaColor activeColor = WithOpacity(appearance.ActiveColor, appearance.Opacity * appearance.ActiveOpacity * definition.Opacity);
+        RgbaColor displayColor = Blend(ringColor, activeColor, state.Activity);
+        RgbaColor frameColor = WithOpacity(appearance.FrameColor, appearance.Opacity * appearance.FramePrimaryOpacity * definition.Opacity);
+        RgbaColor frameActiveColor = WithOpacity(appearance.FrameActiveColor, appearance.Opacity * appearance.FrameActiveOpacity * definition.Opacity);
+        RgbaColor frameDisplayColor = Blend(frameColor, frameActiveColor, state.Activity);
+        double visualEffectOpacity = frameDisplayColor.A / 255.0;
+        double textEffectOpacity = displayColor.A / 255.0;
 
         return state with
         {
@@ -206,11 +221,16 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
             DisplayName = definition.DisplayName,
             X = Scale(definition.X, appearance),
             Y = Scale(definition.Y, appearance),
+            Opacity = definition.Opacity,
+            LineThickness = definition.LineThickness,
             RingColor = ringColor,
             ActiveColor = activeColor,
-            DisplayColor = Blend(ringColor, activeColor, state.Activity),
-            VisualEffects = definition.VisualEffects,
-            TextEffects = definition.TextEffects
+            DisplayColor = displayColor,
+            FrameColor = frameColor,
+            FrameActiveColor = frameActiveColor,
+            FrameDisplayColor = frameDisplayColor,
+            VisualEffects = ApplyEffectOpacity(definition.VisualEffects, visualEffectOpacity),
+            TextEffects = ApplyEffectOpacity(definition.TextEffects, textEffectOpacity)
         };
     }
 
@@ -326,12 +346,28 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         return value * appearance.WidgetScale;
     }
 
+    private static double ScaleSize(double value, AppearanceSettings appearance, WidgetDefinition widget)
+    {
+        return value * appearance.WidgetScale * widget.Scale;
+    }
+
     private static RgbaColor WithOpacity(RgbaColor color, double opacity)
     {
         double alpha = color.A * Math.Clamp(opacity, 0.0, 1.0);
         return color with
         {
             A = (byte)Math.Round(Math.Clamp(alpha, 0.0, 255.0))
+        };
+    }
+
+    private static EffectSettings ApplyEffectOpacity(EffectSettings effects, double opacity)
+    {
+        double multiplier = Math.Clamp(opacity, 0.0, 1.0);
+        return effects with
+        {
+            OutlineColor = WithOpacity(effects.OutlineColor, multiplier),
+            ShadowColor = WithOpacity(effects.ShadowColor, multiplier),
+            BackplateColor = WithOpacity(effects.BackplateColor, multiplier)
         };
     }
 

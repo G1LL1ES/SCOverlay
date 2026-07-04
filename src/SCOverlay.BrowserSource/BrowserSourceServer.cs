@@ -1,7 +1,9 @@
 using System.Net;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using SCOverlay.Core.Domain;
 using SCOverlay.Core.Profiles;
 using SCOverlay.Core.Rendering;
 
@@ -163,6 +165,14 @@ public sealed class BrowserSourceServer : IDisposable
             {
                 await WriteTextAsync(context.Response, BrowserSourcePage.RollIndicatorSvg, "image/svg+xml; charset=utf-8", cancellationToken);
             }
+            else if (path.Equals($"/assets/{RollAssets.Gladius}.png", StringComparison.OrdinalIgnoreCase))
+            {
+                await WriteAssetFileAsync(context.Response, "roll_indicator.png", "image/png", cancellationToken);
+            }
+            else if (path.Equals($"/assets/{RollAssets.Arrow}.png", StringComparison.OrdinalIgnoreCase))
+            {
+                await WriteAssetFileAsync(context.Response, "roll_indicator_arrow.png", "image/png", cancellationToken);
+            }
             else
             {
                 context.Response.StatusCode = (int)HttpStatusCode.NotFound;
@@ -172,6 +182,44 @@ public sealed class BrowserSourceServer : IDisposable
         catch (Exception exception) when (exception is IOException or HttpListenerException or ObjectDisposedException or OperationCanceledException)
         {
         }
+    }
+
+    private static async Task WriteAssetFileAsync(
+        HttpListenerResponse response,
+        string fileName,
+        string contentType,
+        CancellationToken cancellationToken)
+    {
+        string path = Path.Combine(AppContext.BaseDirectory, "Assets", fileName);
+        if (!File.Exists(path))
+        {
+            byte[]? embedded = ReadEmbeddedAsset(fileName);
+            if (embedded is null)
+            {
+                response.StatusCode = (int)HttpStatusCode.NotFound;
+                await WriteTextAsync(response, "Asset not found", "text/plain; charset=utf-8", cancellationToken);
+                return;
+            }
+
+            await WriteBytesAsync(response, embedded, contentType, cancellationToken);
+            return;
+        }
+
+        await WriteBytesAsync(response, await File.ReadAllBytesAsync(path, cancellationToken), contentType, cancellationToken);
+    }
+
+    private static byte[]? ReadEmbeddedAsset(string fileName)
+    {
+        string resourceName = $"SCOverlay.BrowserSource.Assets.{fileName}";
+        using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+        if (stream is null)
+        {
+            return null;
+        }
+
+        using var memory = new MemoryStream();
+        stream.CopyTo(memory);
+        return memory.ToArray();
     }
 
     private static async Task WriteTextAsync(

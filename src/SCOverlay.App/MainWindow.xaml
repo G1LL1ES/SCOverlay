@@ -248,7 +248,15 @@
                                            Margin="0,12,0,5" />
                                 <ComboBox x:Name="BindingDetailComboBox"
                                           MinHeight="30"
-                                          DisplayMemberPath="DisplayName" />
+                                          DisplayMemberPath="DisplayName"
+                                          SelectionChanged="BindingDetailComboBox_OnSelectionChanged" />
+                                <CheckBox x:Name="BindingInvertAxisCheckBox"
+                                          Content="Invert controller axis"
+                                          Foreground="#D5E1EA"
+                                          Margin="0,10,0,0"
+                                          Visibility="Collapsed"
+                                          Checked="BindingInvertAxisCheckBox_OnChanged"
+                                          Unchecked="BindingInvertAxisCheckBox_OnChanged" />
                             </StackPanel>
 
                             <StackPanel Grid.Column="4"
@@ -341,7 +349,7 @@
                                       DisplayMemberPath="Name"
                                       SelectionChanged="AppearancePresetComboBox_OnSelectionChanged" />
 
-                            <TextBlock Text="Primary color"
+                            <TextBlock Text="Input primary color"
                                        Foreground="#9FB0BE"
                                        FontSize="12"
                                        Margin="0,16,0,5" />
@@ -350,6 +358,8 @@
                                     <ColumnDefinition Width="32" />
                                     <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <Border x:Name="AppearanceRingColorSwatch"
                                         Width="32"
@@ -363,9 +373,14 @@
                                          VerticalContentAlignment="Center"
                                          FontFamily="Consolas"
                                          TextChanged="AppearanceColorTextBox_OnTextChanged" />
+                                <Button Grid.Column="4"
+                                        Content="Pick"
+                                        MinWidth="56"
+                                        Height="30"
+                                        Click="PickPrimaryColorButton_OnClick" />
                             </Grid>
 
-                            <TextBlock Text="Active color"
+                            <TextBlock Text="Input active color"
                                        Foreground="#9FB0BE"
                                        FontSize="12"
                                        Margin="0,12,0,5" />
@@ -374,6 +389,8 @@
                                     <ColumnDefinition Width="32" />
                                     <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <Border x:Name="AppearanceActiveColorSwatch"
                                         Width="32"
@@ -387,6 +404,73 @@
                                          VerticalContentAlignment="Center"
                                          FontFamily="Consolas"
                                          TextChanged="AppearanceColorTextBox_OnTextChanged" />
+                                <Button Grid.Column="4"
+                                        Content="Pick"
+                                        MinWidth="56"
+                                        Height="30"
+                                        Click="PickActiveColorButton_OnClick" />
+                            </Grid>
+
+                            <TextBlock Text="Frame primary color"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,12,0,5" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="AppearanceFrameColorSwatch"
+                                        Width="32"
+                                        Height="30"
+                                        BorderBrush="#405060"
+                                        BorderThickness="1"
+                                        CornerRadius="3" />
+                                <TextBox Grid.Column="2"
+                                         x:Name="AppearanceFrameColorTextBox"
+                                         MinHeight="30"
+                                         VerticalContentAlignment="Center"
+                                         FontFamily="Consolas"
+                                         TextChanged="AppearanceColorTextBox_OnTextChanged" />
+                                <Button Grid.Column="4"
+                                        Content="Pick"
+                                        MinWidth="56"
+                                        Height="30"
+                                        Click="PickFramePrimaryColorButton_OnClick" />
+                            </Grid>
+
+                            <TextBlock Text="Frame active color"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,12,0,5" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="32" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="AppearanceFrameActiveColorSwatch"
+                                        Width="32"
+                                        Height="30"
+                                        BorderBrush="#405060"
+                                        BorderThickness="1"
+                                        CornerRadius="3" />
+                                <TextBox Grid.Column="2"
+                                         x:Name="AppearanceFrameActiveColorTextBox"
+                                         MinHeight="30"
+                                         VerticalContentAlignment="Center"
+                                         FontFamily="Consolas"
+                                         TextChanged="AppearanceColorTextBox_OnTextChanged" />
+                                <Button Grid.Column="4"
+                                        Content="Pick"
+                                        MinWidth="56"
+                                        Height="30"
+                                        Click="PickFrameActiveColorButton_OnClick" />
                             </Grid>
 
                             <Border x:Name="AppearancePreviewBackplate"
@@ -456,6 +540,10 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <TextBlock Text="Sizing and opacity"
@@ -518,6 +606,102 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="70" />
                                 </Grid.ColumnDefinitions>
+                                <TextBlock Text="Input primary"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearancePrimaryOpacitySlider"
+                                        Minimum="0"
+                                        Maximum="1.0"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearancePrimaryOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="4"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Input active"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceActiveOpacitySlider"
+                                        Minimum="0"
+                                        Maximum="1.0"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceActiveOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="5"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Frame primary"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceFramePrimaryOpacitySlider"
+                                        Minimum="0"
+                                        Maximum="1.0"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceFramePrimaryOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="6"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Frame active"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="AppearanceFrameActiveOpacitySlider"
+                                        Minimum="0"
+                                        Maximum="1.0"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="AppearanceSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="AppearanceFrameActiveOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="7"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="70" />
+                                </Grid.ColumnDefinitions>
                                 <TextBlock Text="Outline"
                                            Foreground="#D5E1EA"
                                            VerticalAlignment="Center" />
@@ -535,7 +719,7 @@
                                            VerticalAlignment="Center" />
                             </Grid>
 
-                            <Grid Grid.Row="4"
+                            <Grid Grid.Row="8"
                                   Margin="0,18,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="110" />
@@ -559,7 +743,7 @@
                                            VerticalAlignment="Center" />
                             </Grid>
 
-                            <Grid Grid.Row="5"
+                            <Grid Grid.Row="9"
                                   Margin="0,18,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="110" />
@@ -578,6 +762,272 @@
                                         ValueChanged="AppearanceSlider_OnValueChanged" />
                                 <TextBlock Grid.Column="2"
                                            x:Name="AppearanceBackplateOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Elements">
+                <Grid Margin="18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*" />
+                        <ColumnDefinition Width="18" />
+                        <ColumnDefinition Width="3*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border BorderBrush="#26313C"
+                            BorderThickness="1"
+                            Background="#111820"
+                            CornerRadius="4"
+                            Padding="16">
+                        <StackPanel>
+                            <TextBlock Text="Element"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Text="Widget"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,14,0,5" />
+                            <ComboBox x:Name="ElementWidgetComboBox"
+                                      MinHeight="30"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectionChanged="ElementWidgetComboBox_OnSelectionChanged" />
+
+                            <WrapPanel Margin="0,18,0,0">
+                                <Button Content="Apply"
+                                        MinWidth="76"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="ApplyElementAppearanceButton_OnClick" />
+                                <Button Content="Reset"
+                                        MinWidth="76"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="ResetElementAppearanceButton_OnClick" />
+                            </WrapPanel>
+
+                            <StackPanel x:Name="ElementRollAssetPanel"
+                                        Margin="0,20,0,0">
+                                <TextBlock Text="Roll display"
+                                           Foreground="#9FB0BE"
+                                           FontSize="12"
+                                           Margin="0,0,0,5" />
+                                <ComboBox x:Name="ElementRollAssetComboBox"
+                                          MinHeight="30"
+                                          DisplayMemberPath="DisplayName"
+                                          SelectionChanged="ElementRollAssetComboBox_OnSelectionChanged" />
+                            </StackPanel>
+
+                            <CheckBox x:Name="ElementStateTextShakeCheckBox"
+                                      Content="Shake when maxed"
+                                      Foreground="#D5E1EA"
+                                      Margin="0,20,0,0"
+                                      Checked="ElementStateTextShakeCheckBox_OnChanged"
+                                      Unchecked="ElementStateTextShakeCheckBox_OnChanged" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            BorderBrush="#26313C"
+                            BorderThickness="1"
+                            Background="#111820"
+                            CornerRadius="4"
+                            Padding="16">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Text="Layout"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold" />
+
+                            <Grid Grid.Row="1"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="X"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementXSlider"
+                                        Minimum="-500"
+                                        Maximum="500"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementXValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="2"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Y"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementYSlider"
+                                        Minimum="-350"
+                                        Maximum="350"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementYValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="3"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Scale"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementScaleSlider"
+                                        Minimum="0.25"
+                                        Maximum="3"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementScaleValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="4"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Opacity"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementOpacitySlider"
+                                        Minimum="0"
+                                        Maximum="1"
+                                        TickFrequency="0.05"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementOpacityValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <TextBlock Grid.Row="5"
+                                       Text="Components"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Margin="0,24,0,0" />
+
+                            <Grid Grid.Row="6"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Line"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementLineThicknessSlider"
+                                        Minimum="0"
+                                        Maximum="20"
+                                        TickFrequency="0.5"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementLineThicknessValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="7"
+                                  x:Name="ElementThrottleCornerRow"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Corners"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementThrottleCornerSlider"
+                                        Minimum="0"
+                                        Maximum="40"
+                                        TickFrequency="1"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementThrottleCornerValueText"
+                                           Foreground="#D5E1EA"
+                                           TextAlignment="Right"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Grid.Row="8"
+                                  x:Name="ElementRollRotationRow"
+                                  Margin="0,18,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="74" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Roll max"
+                                           Foreground="#D5E1EA"
+                                           VerticalAlignment="Center" />
+                                <Slider Grid.Column="1"
+                                        x:Name="ElementRollMaxRotationSlider"
+                                        Minimum="5"
+                                        Maximum="180"
+                                        TickFrequency="5"
+                                        IsSnapToTickEnabled="True"
+                                        ValueChanged="ElementSlider_OnValueChanged" />
+                                <TextBlock Grid.Column="2"
+                                           x:Name="ElementRollMaxRotationValueText"
                                            Foreground="#D5E1EA"
                                            TextAlignment="Right"
                                            VerticalAlignment="Center" />

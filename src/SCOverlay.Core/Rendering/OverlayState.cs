@@ -30,6 +30,10 @@ public abstract record WidgetState
 
     public double Y { get; init; }
 
+    public double Opacity { get; init; } = 1.0;
+
+    public double LineThickness { get; init; } = 3.0;
+
     public bool Connected { get; init; }
 
     public double Activity { get; init; }
@@ -39,6 +43,12 @@ public abstract record WidgetState
     public RgbaColor ActiveColor { get; init; }
 
     public RgbaColor DisplayColor { get; init; }
+
+    public RgbaColor FrameColor { get; init; }
+
+    public RgbaColor FrameActiveColor { get; init; }
+
+    public RgbaColor FrameDisplayColor { get; init; }
 
     public EffectSettings VisualEffects { get; init; } = new();
 
@@ -70,6 +80,8 @@ public sealed record ThrottleWidgetState : WidgetState
 
     public double Height { get; init; }
 
+    public double CornerRadius { get; init; }
+
     public double RawValue { get; init; }
 
     public double Value { get; init; }
@@ -87,6 +99,8 @@ public sealed record RollWidgetState : WidgetState
 
     public string AssetId { get; init; } = string.Empty;
 
+    public RollRenderMode RenderMode { get; init; } = RollRenderMode.Image;
+
     public double RawValue { get; init; }
 
     public double Value { get; init; }
@@ -103,6 +117,8 @@ public sealed record StateTextWidgetState : WidgetState
     public bool Active { get; init; }
 
     public double Intensity { get; init; }
+
+    public double ShakeIntensity { get; init; }
 
     public double FontSize { get; init; }
 }

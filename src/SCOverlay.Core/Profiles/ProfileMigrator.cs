@@ -19,9 +19,14 @@ public static class ProfileMigrator
             };
         }
 
-        return shouldRepairKeyboardAlternates
+        profile = shouldRepairKeyboardAlternates
             ? RepairDefaultKeyboardAlternates(profile)
             : profile;
+
+        return profile with
+        {
+            Appearance = AppearanceSettingsNormalizer.Normalize(profile.Appearance)
+        };
     }
 
     private static OverlayProfile RepairDefaultKeyboardAlternates(OverlayProfile profile)

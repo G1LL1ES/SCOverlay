@@ -43,6 +43,26 @@ public static class ProfileValidator
             issues.Add(new ProfileValidationIssue("appearance.widgetScale", "Appearance widget scale must be between 0.5 and 1.75."));
         }
 
+        if (profile.Appearance.PrimaryOpacity is < 0.0 or > 1.0)
+        {
+            issues.Add(new ProfileValidationIssue("appearance.primaryOpacity", "Primary color opacity must be between 0 and 1."));
+        }
+
+        if (profile.Appearance.ActiveOpacity is < 0.0 or > 1.0)
+        {
+            issues.Add(new ProfileValidationIssue("appearance.activeOpacity", "Active color opacity must be between 0 and 1."));
+        }
+
+        if (profile.Appearance.FramePrimaryOpacity is < 0.0 or > 1.0)
+        {
+            issues.Add(new ProfileValidationIssue("appearance.framePrimaryOpacity", "Frame primary color opacity must be between 0 and 1."));
+        }
+
+        if (profile.Appearance.FrameActiveOpacity is < 0.0 or > 1.0)
+        {
+            issues.Add(new ProfileValidationIssue("appearance.frameActiveOpacity", "Frame active color opacity must be between 0 and 1."));
+        }
+
         ValidateInputSources(profile.InputSources, issues);
         ValidateWidgets(profile.Widgets, profile.InputSources, issues);
 
@@ -185,6 +205,18 @@ public static class ProfileValidator
             WidgetDefinition widget = widgets[i];
             string path = $"widgets[{i}]";
             Required(widget.Id, $"{path}.id", "Widget id is required.", issues);
+            if (widget.Scale is < 0.25 or > 3.0)
+            {
+                issues.Add(new ProfileValidationIssue($"{path}.scale", "Widget scale must be between 0.25 and 3.0."));
+            }
+            if (widget.Opacity is < 0.0 or > 1.0)
+            {
+                issues.Add(new ProfileValidationIssue($"{path}.opacity", "Widget opacity must be between 0 and 1."));
+            }
+            if (widget.LineThickness is < 0.0 or > 20.0)
+            {
+                issues.Add(new ProfileValidationIssue($"{path}.lineThickness", "Widget line thickness must be between 0 and 20."));
+            }
             if (!string.IsNullOrWhiteSpace(widget.Id) && !seen.Add(widget.Id))
             {
                 issues.Add(new ProfileValidationIssue($"{path}.id", $"Duplicate widget id '{widget.Id}'."));
@@ -198,10 +230,22 @@ public static class ProfileValidator
                     break;
                 case ThrottleWidgetDefinition throttle:
                     ValidateSourceReference(throttle.SourceId, InputSourceKind.Axis, sourceById, $"{path}.sourceId", issues);
+                    if (throttle.CornerRadius is < 0.0 or > 40.0)
+                    {
+                        issues.Add(new ProfileValidationIssue($"{path}.cornerRadius", "Throttle corner radius must be between 0 and 40."));
+                    }
                     break;
                 case RollWidgetDefinition roll:
                     ValidateSourceReference(roll.SourceId, InputSourceKind.Axis, sourceById, $"{path}.sourceId", issues);
                     Required(roll.AssetId, $"{path}.assetId", "Roll widget asset id is required.", issues);
+                    if (!string.IsNullOrWhiteSpace(roll.AssetId) && !RollAssets.IsKnown(roll.AssetId))
+                    {
+                        issues.Add(new ProfileValidationIssue($"{path}.assetId", $"Roll widget asset '{roll.AssetId}' is not supported."));
+                    }
+                    if (roll.MaxRotationDegrees is < 5.0 or > 180.0)
+                    {
+                        issues.Add(new ProfileValidationIssue($"{path}.maxRotationDegrees", "Roll max rotation must be between 5 and 180 degrees."));
+                    }
                     break;
                 case StateTextWidgetDefinition stateText:
                     Required(stateText.Text, $"{path}.text", "State text widget text is required.", issues);

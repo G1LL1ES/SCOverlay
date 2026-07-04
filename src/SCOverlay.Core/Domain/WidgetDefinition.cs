@@ -17,6 +17,12 @@ public abstract record WidgetDefinition
 
     public double Y { get; init; }
 
+    public double Scale { get; init; } = 1.0;
+
+    public double Opacity { get; init; } = 1.0;
+
+    public double LineThickness { get; init; } = 3.0;
+
     public RgbaColor RingColor { get; init; } = new(255, 255, 255, 255);
 
     public RgbaColor ActiveColor { get; init; } = new(255, 0, 0, 255);
@@ -45,6 +51,8 @@ public sealed record ThrottleWidgetDefinition : WidgetDefinition
 
     public double Height { get; init; } = 130.0;
 
+    public double CornerRadius { get; init; } = 8.0;
+
     public string SourceId { get; init; } = string.Empty;
 
     public VerticalLabels Labels { get; init; } = new();
@@ -60,7 +68,9 @@ public sealed record RollWidgetDefinition : WidgetDefinition
 
     public string SourceId { get; init; } = string.Empty;
 
-    public string AssetId { get; init; } = "roll-indicator-default";
+    public string AssetId { get; init; } = RollAssets.Gladius;
+
+    public RollRenderMode RenderMode { get; init; } = RollRenderMode.Image;
 
     public double MaxRotationDegrees { get; init; } = 60.0;
 
@@ -68,6 +78,28 @@ public sealed record RollWidgetDefinition : WidgetDefinition
     {
         ValueSmoothingSpeed = 98.0
     };
+}
+
+public enum RollRenderMode
+{
+    Image,
+    Indicator
+}
+
+public static class RollAssets
+{
+    public const string Indicator = "roll-indicator-default";
+
+    public const string Gladius = "roll-indicator-gladius";
+
+    public const string Arrow = "roll-indicator-arrow";
+
+    public static bool IsKnown(string assetId)
+    {
+        return string.Equals(assetId, Indicator, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(assetId, Gladius, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(assetId, Arrow, StringComparison.OrdinalIgnoreCase);
+    }
 }
 
 public sealed record StateTextWidgetDefinition : WidgetDefinition

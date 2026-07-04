@@ -6,6 +6,11 @@
     <ProjectReference Include="..\SCOverlay.BrowserSource\SCOverlay.BrowserSource.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\SCOverlay.BrowserSource\Assets\roll_indicator.png" Link="Assets\roll_indicator.png" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\SCOverlay.BrowserSource\Assets\roll_indicator_arrow.png" Link="Assets\roll_indicator_arrow.png" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <AssemblyName>SCOverlay</AssemblyName>
     <Product>SC Overlay</Product>

@@ -16,7 +16,7 @@ Early production test builds.
 - Mixed-device binding capture and profile editing
 - OBS browser source
 - Desktop overlay with tray controls
-- Customizable HUD appearance with presets, colors, opacity, scale, and effects
+- Customizable HUD appearance with presets, color pickers, separate primary/active opacity, per-element layout/scale/opacity, and effects
 - Portable self-contained Windows packaging
 - No third-party runtime dependencies
 - Local file logging under `%AppData%\SCOverlay\logs`

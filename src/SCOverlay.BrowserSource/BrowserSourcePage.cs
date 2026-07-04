@@ -9,15 +9,25 @@ internal static class BrowserSourcePage
               "id": "roll-indicator-default",
               "path": "/assets/roll-indicator-default.svg",
               "type": "image/svg+xml"
+            },
+            {
+              "id": "roll-indicator-gladius",
+              "path": "/assets/roll-indicator-gladius.png",
+              "type": "image/png"
+            },
+            {
+              "id": "roll-indicator-arrow",
+              "path": "/assets/roll-indicator-arrow.png",
+              "type": "image/png"
             }
           ]
         }
         """;
 
     public const string RollIndicatorSvg = """
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="-100 -60 200 120">
-          <path d="M-78,34 C-43,-22 43,-22 78,34" fill="none" stroke="white" stroke-width="10" stroke-linecap="round" opacity="0.9"/>
-          <path d="M0,-34 L18,8 L0,-1 L-18,8 Z" fill="white" opacity="0.95"/>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="-80 -80 160 160">
+          <path d="M0,-62 L19,-12 L56,13 L18,19 L0,62 L-18,19 L-56,13 L-19,-12 Z" fill="white" opacity="0.96"/>
+          <path d="M0,-42 L11,-9 L31,5 L9,7 L0,32 L-9,7 L-31,5 L-11,-9 Z" fill="none" stroke="black" stroke-width="4" opacity="0.25"/>
         </svg>
         """;
 
@@ -52,6 +62,7 @@ internal static class BrowserSourcePage
             const ctx = canvas.getContext('2d');
             let latestState = null;
             let lastFetchAt = 0;
+            const rollImages = new Map();
 
             function resize() {
               const dpr = Math.max(window.devicePixelRatio || 1, 1);
@@ -79,6 +90,10 @@ internal static class BrowserSourcePage
               if (!c) return `rgba(255,255,255,${alpha})`;
               const a = Math.max(0, Math.min(1, (c.a / 255) * alpha));
               return `rgba(${c.r},${c.g},${c.b},${a})`;
+            }
+
+            function alpha(c) {
+              return c ? Math.max(0, Math.min(1, c.a / 255)) : 1;
             }
 
             function applyShadow(effects) {
@@ -153,13 +168,14 @@ internal static class BrowserSourcePage
 
             function drawStick(widget) {
               const radius = (widget.size || 220) / 2;
-              ctx.lineWidth = 3;
-              ctx.strokeStyle = color(widget.displayColor);
+              ctx.lineWidth = Math.max(0, widget.lineThickness ?? 3);
+              ctx.strokeStyle = color(widget.frameDisplayColor);
               ctx.beginPath();
               ctx.arc(0, 0, radius, 0, Math.PI * 2);
               ctx.stroke();
 
-              ctx.strokeStyle = color(widget.ringColor, 0.35);
+              ctx.strokeStyle = color(widget.frameDisplayColor, 0.35);
+              ctx.lineWidth = Math.max(0, (widget.lineThickness ?? 3) * 0.66);
               ctx.beginPath();
               ctx.moveTo(-radius, 0);
               ctx.lineTo(radius, 0);
@@ -169,36 +185,53 @@ internal static class BrowserSourcePage
 
               const x = (widget.xValue || 0) * radius;
               const y = -(widget.yValue || 0) * radius;
-              ctx.fillStyle = color(widget.displayColor);
-              ctx.beginPath();
-              ctx.arc(x, y, 12 + (widget.activity || 0) * 7, 0, Math.PI * 2);
+              const distance = Math.hypot(x, y);
+              const pillWidth = 20 + (widget.activity || 0) * 10;
+              const pillLength = Math.max(pillWidth, distance + pillWidth);
+              const angle = distance <= 0.01 ? 0 : Math.atan2(y, x);
+              ctx.save();
+              ctx.rotate(angle);
+              ctx.fillStyle = color(widget.displayColor, 0.86);
+              roundedRect(-pillWidth / 2, -pillWidth / 2, pillLength, pillWidth, pillWidth / 2);
               ctx.fill();
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              ctx.moveTo(0, 0);
-              ctx.lineTo(x, y);
-              ctx.strokeStyle = color(widget.displayColor, 0.7);
-              ctx.stroke();
+              ctx.restore();
             }
 
             function drawThrottle(widget) {
               const w = widget.width || 45;
               const h = widget.height || 130;
-              ctx.lineWidth = 3;
-              ctx.strokeStyle = color(widget.displayColor);
-              ctx.strokeRect(-w / 2, -h / 2, w, h);
+              const radius = widget.cornerRadius ?? 8;
+              ctx.lineWidth = Math.max(0, widget.lineThickness ?? 3);
+              ctx.strokeStyle = color(widget.frameDisplayColor);
+              roundedRect(-w / 2, -h / 2, w, h, radius);
+              ctx.stroke();
 
               const ratio = Math.max(0, Math.min(1, widget.fillRatio ?? 0.5));
-              const fillHeight = h * ratio;
-              ctx.fillStyle = color(widget.displayColor, 0.75);
-              ctx.fillRect(-w / 2 + 5, h / 2 - fillHeight + 5, w - 10, Math.max(fillHeight - 10, 0));
+              const inset = Math.max(4, (widget.lineThickness ?? 3) + 2);
+              const innerW = Math.max(w - (inset * 2), 1);
+              const innerH = Math.max(h - (inset * 2), 1);
+              const centerBand = Math.min(innerH, Math.max(4, (widget.lineThickness ?? 3) + 1));
+              const travel = Math.max((innerH - centerBand) / 2, 0);
+              const extension = travel * ratio;
+              const fillHeight = centerBand + extension;
+              const fillTop = (widget.value || 0) >= 0
+                ? (-centerBand / 2) - extension
+                : -centerBand / 2;
+              ctx.fillStyle = color(widget.displayColor, 0.82);
+              roundedRect(-w / 2 + inset, fillTop, innerW, fillHeight, Math.max(0, radius - inset));
+              ctx.fill();
             }
 
             function drawRoll(widget) {
               const w = widget.width || 162;
               const h = widget.height || 112;
-              ctx.strokeStyle = color(widget.displayColor);
-              ctx.lineWidth = 5;
+              if ((widget.renderMode || 'image') === 'image') {
+                drawRollImage(widget, w, h);
+                return;
+              }
+
+              ctx.strokeStyle = color(widget.frameDisplayColor);
+              ctx.lineWidth = Math.max(0, widget.lineThickness ?? 5);
               ctx.beginPath();
               ctx.arc(0, 18, w / 2, Math.PI * 1.08, Math.PI * 1.92);
               ctx.stroke();
@@ -216,9 +249,70 @@ internal static class BrowserSourcePage
               ctx.restore();
             }
 
+            function drawRollImage(widget, w, h) {
+              const assetId = widget.assetId || 'roll-indicator-gladius';
+              const image = loadRollImage(assetId);
+              ctx.save();
+              ctx.rotate((widget.rotationDegrees || 0) * Math.PI / 180);
+              if (image.complete && image.naturalWidth > 0) {
+                const tinted = tintImage(image, Math.max(1, Math.ceil(w)), Math.max(1, Math.ceil(h)), color(widget.displayColor));
+                ctx.drawImage(tinted, -w / 2, -h / 2, w, h);
+              } else {
+                ctx.fillStyle = color(widget.displayColor);
+                ctx.strokeStyle = color(widget.frameDisplayColor, 0.28);
+                ctx.lineWidth = Math.max(0, widget.lineThickness ?? 3);
+                const scale = Math.min(w / 160, h / 160);
+                ctx.scale(scale, scale);
+                ctx.beginPath();
+                ctx.moveTo(0, -62);
+                ctx.lineTo(19, -12);
+                ctx.lineTo(56, 13);
+                ctx.lineTo(18, 19);
+                ctx.lineTo(0, 62);
+                ctx.lineTo(-18, 19);
+                ctx.lineTo(-56, 13);
+                ctx.lineTo(-19, -12);
+                ctx.closePath();
+                ctx.fill();
+                if ((widget.lineThickness ?? 3) > 0) {
+                  ctx.stroke();
+                }
+              }
+              ctx.restore();
+            }
+
+            function loadRollImage(assetId) {
+              const id = assetId === 'roll-indicator-arrow' ? assetId : 'roll-indicator-gladius';
+              if (!rollImages.has(id)) {
+                const image = new Image();
+                image.decoding = 'async';
+                image.src = `/assets/${id}.png`;
+                rollImages.set(id, image);
+              }
+
+              return rollImages.get(id);
+            }
+
+            function tintImage(image, width, height, fillStyle) {
+              const tinted = document.createElement('canvas');
+              tinted.width = width;
+              tinted.height = height;
+              const tintCtx = tinted.getContext('2d');
+              tintCtx.drawImage(image, 0, 0, width, height);
+              tintCtx.globalCompositeOperation = 'source-in';
+              tintCtx.fillStyle = fillStyle;
+              tintCtx.fillRect(0, 0, width, height);
+              return tinted;
+            }
+
             function drawStateText(widget) {
               const effects = widget.textEffects || {};
               const size = widget.fontSize || 34;
+              const shake = Math.max(0, Math.min(1, widget.shakeIntensity || 0));
+              if (shake > 0) {
+                const t = performance.now();
+                ctx.translate(Math.sin(t * 0.095) * 1.8 * shake, Math.cos(t * 0.12) * 1.2 * shake);
+              }
               ctx.font = `700 ${size}px Arial, Helvetica, sans-serif`;
               ctx.textAlign = 'center';
               ctx.textBaseline = 'middle';
@@ -234,8 +328,8 @@ internal static class BrowserSourcePage
                 ctx.fillStyle = color(effects.backplateColor, 1);
                 roundedRect(-width / 2, -height / 2, width, height, effects.backplateRadius || 0);
                 ctx.fill();
-                ctx.restore();
-              }
+              ctx.restore();
+            }
 
               applyShadow(effects);
               if (effects.outlineEnabled) {

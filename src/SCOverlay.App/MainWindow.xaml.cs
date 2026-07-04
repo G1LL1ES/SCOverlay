@@ -36,6 +36,8 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<BindableSourceItem> bindableSourceItems = new();
     private readonly ObservableCollection<BindingDetailItem> bindingDetailItems = new();
     private readonly ObservableCollection<AppearancePresetItem> appearancePresetItems = new();
+    private readonly ObservableCollection<WidgetAppearanceItem> widgetAppearanceItems = new();
+    private readonly ObservableCollection<RollAssetItem> rollAssetItems = new();
     private AppSettings appSettings;
     private OverlayProfile profile;
     private BrowserSourceServer browserSourceServer;
@@ -43,7 +45,9 @@ public partial class MainWindow : Window
     private Forms.NotifyIcon? trayIcon;
     private OverlayState latestOverlayState;
     private bool isLoadingProfiles;
+    private bool isRefreshingBindingUi;
     private bool isLoadingAppearance = true;
+    private bool isLoadingElementAppearance = true;
     private bool isRefreshingDesktopOverlayUi;
     private bool isClosing;
     private CancellationTokenSource? captureCancellation;
@@ -79,9 +83,15 @@ public partial class MainWindow : Window
         InputSourcesGrid.ItemsSource = bindableSourceItems;
         BindingDetailComboBox.ItemsSource = bindingDetailItems;
         AppearancePresetComboBox.ItemsSource = appearancePresetItems;
+        ElementWidgetComboBox.ItemsSource = widgetAppearanceItems;
+        ElementRollAssetComboBox.ItemsSource = rollAssetItems;
         foreach (AppearancePresetItem preset in CreateAppearancePresets())
         {
             appearancePresetItems.Add(preset);
+        }
+        foreach (RollAssetItem item in CreateRollAssetItems())
+        {
+            rollAssetItems.Add(item);
         }
 
         HeaderText.Text = "Profile setup, binding capture, OBS source, and live input diagnostics.";
@@ -89,6 +99,7 @@ public partial class MainWindow : Window
         UpdateObsUrlText();
         NewProfileNameTextBox.Text = $"{profile.Name} Copy";
         RefreshAppearanceUi();
+        RefreshElementAppearanceUi();
         RefreshDesktopOverlayUi();
         InitializeTrayIcon();
         FooterStatusText.Text = $"Runtime data: {paths.DataRoot}";
@@ -261,21 +272,30 @@ public partial class MainWindow : Window
 
     private void RefreshBindingUi(string? selectedSourceId = null)
     {
-        bindableSourceItems.Clear();
-        foreach (InputSource source in profile.InputSources.Where(IsBindableActionSource))
+        isRefreshingBindingUi = true;
+        try
         {
-            bindableSourceItems.Add(new BindableSourceItem(
-                source.Id,
-                source.DisplayName,
-                source.Kind,
-                DetermineCaptureKind(profile, source.Id, source.Kind),
-                FormatInputSource(source)));
-        }
+            bindableSourceItems.Clear();
+            foreach (InputSource source in profile.InputSources.Where(IsBindableActionSource))
+            {
+                bindableSourceItems.Add(new BindableSourceItem(
+                    source.Id,
+                    source.DisplayName,
+                    source.Kind,
+                    DetermineCaptureKind(profile, source.Id, source.Kind),
+                    FormatInputSource(source)));
+            }
 
-        BindableSourceItem? selected = bindableSourceItems.FirstOrDefault(item =>
-            string.Equals(item.Id, selectedSourceId, StringComparison.OrdinalIgnoreCase));
-        BindingSourceComboBox.SelectedItem = selected ?? bindableSourceItems.FirstOrDefault();
-        UpdateSelectedBindingText();
+            BindableSourceItem? selected = bindableSourceItems.FirstOrDefault(item =>
+                string.Equals(item.Id, selectedSourceId, StringComparison.OrdinalIgnoreCase));
+            BindingSourceComboBox.SelectedItem = selected ?? bindableSourceItems.FirstOrDefault();
+            UpdateSelectedBindingText();
+        }
+        finally
+        {
+            isRefreshingBindingUi = false;
+            RefreshBindingInvertUi();
+        }
     }
 
     private void OnInputTimerTick(object? sender, EventArgs e)
@@ -321,6 +341,7 @@ public partial class MainWindow : Window
             desktopOverlayWindow?.UpdateState(latestOverlayState);
             RefreshBindingUi();
             RefreshAppearanceUi();
+            RefreshElementAppearanceUi();
             NewProfileNameTextBox.Text = $"{profile.Name} Copy";
             ProfileStatusText.Text = $"Active: {profile.Name}";
             FooterStatusText.Text = $"Applied profile '{profile.Name}'.";
@@ -348,6 +369,7 @@ public partial class MainWindow : Window
             await RefreshProfilesAsync(profile.Id);
             RefreshBindingUi();
             RefreshAppearanceUi();
+            RefreshElementAppearanceUi();
             FooterStatusText.Text = $"Created profile '{profile.Name}'.";
         }
         catch (Exception exception)
@@ -411,6 +433,7 @@ public partial class MainWindow : Window
             await RefreshProfilesAsync(profile.Id);
             RefreshBindingUi();
             RefreshAppearanceUi();
+            RefreshElementAppearanceUi();
             FooterStatusText.Text = $"Imported profile '{profile.Name}'.";
         }
         catch (Exception exception)
@@ -519,6 +542,41 @@ public partial class MainWindow : Window
         UpdateSelectedBindingText();
     }
 
+    private void BindingDetailComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        RefreshBindingInvertUi();
+    }
+
+    private async void BindingInvertAxisCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isRefreshingBindingUi)
+        {
+            return;
+        }
+
+        if (BindingDetailComboBox.SelectedItem is not BindingDetailItem binding)
+        {
+            return;
+        }
+
+        try
+        {
+            profile = ProfileEditor.SetJoystickAxisInverted(profile, binding.SourceId, BindingInvertAxisCheckBox.IsChecked == true);
+            await SaveAndActivateProfileAsync();
+            stateEngine.Reset();
+            RefreshBindingUi((BindingSourceComboBox.SelectedItem as BindableSourceItem)?.Id);
+            FooterStatusText.Text = BindingInvertAxisCheckBox.IsChecked == true
+                ? $"Inverted controller axis '{binding.DisplayName}'."
+                : $"Restored controller axis '{binding.DisplayName}'.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to update controller axis inversion.", exception);
+            FooterStatusText.Text = $"Could not update axis inversion: {exception.Message}";
+            RefreshBindingInvertUi();
+        }
+    }
+
     private async void RemoveSelectedBindingButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (BindingSourceComboBox.SelectedItem is not BindableSourceItem action ||
@@ -587,6 +645,123 @@ public partial class MainWindow : Window
         UpdateAppearancePreview();
     }
 
+    private void PickPrimaryColorButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        PickColorInto(AppearanceRingColorTextBox, profile.Appearance.RingColor);
+    }
+
+    private void PickActiveColorButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        PickColorInto(AppearanceActiveColorTextBox, profile.Appearance.ActiveColor);
+    }
+
+    private void PickFramePrimaryColorButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        PickColorInto(AppearanceFrameColorTextBox, profile.Appearance.FrameColor);
+    }
+
+    private void PickFrameActiveColorButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        PickColorInto(AppearanceFrameActiveColorTextBox, profile.Appearance.FrameActiveColor);
+    }
+
+    private void ElementWidgetComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (isLoadingElementAppearance)
+        {
+            return;
+        }
+
+        LoadSelectedElementAppearance();
+    }
+
+    private void ElementSlider_OnValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (isLoadingElementAppearance)
+        {
+            return;
+        }
+
+        UpdateElementAppearanceValueText();
+    }
+
+    private void ElementRollAssetComboBox_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (isLoadingElementAppearance)
+        {
+            return;
+        }
+
+        UpdateElementAppearanceValueText();
+    }
+
+    private void ElementStateTextShakeCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isLoadingElementAppearance)
+        {
+            return;
+        }
+
+        UpdateElementAppearanceValueText();
+    }
+
+    private async void ApplyElementAppearanceButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ElementWidgetComboBox.SelectedItem is not WidgetAppearanceItem item)
+        {
+            FooterStatusText.Text = "Select an element before applying.";
+            return;
+        }
+
+        try
+        {
+            profile = ProfileEditor.ApplyWidgetAppearance(
+                profile,
+                item.Id,
+                ElementXSlider.Value,
+                ElementYSlider.Value,
+                ElementScaleSlider.Value,
+                ElementOpacitySlider.Value,
+                ElementLineThicknessSlider.Value,
+                ElementThrottleCornerSlider.Value,
+                SelectedRollAssetId(),
+                ElementRollMaxRotationSlider.Value,
+                ElementStateTextShakeCheckBox.IsChecked == true);
+            await SaveAndActivateProfileAsync();
+            RefreshElementAppearanceUi(item.Id);
+            stateEngine.Reset();
+            FooterStatusText.Text = $"Applied element appearance for '{item.DisplayName}'.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to apply element appearance.", exception);
+            FooterStatusText.Text = $"Could not apply element appearance: {exception.Message}";
+        }
+    }
+
+    private async void ResetElementAppearanceButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ElementWidgetComboBox.SelectedItem is not WidgetAppearanceItem item)
+        {
+            FooterStatusText.Text = "Select an element before resetting.";
+            return;
+        }
+
+        try
+        {
+            profile = ProfileEditor.ResetWidgetAppearance(profile, item.Id);
+            await SaveAndActivateProfileAsync();
+            RefreshElementAppearanceUi(item.Id);
+            stateEngine.Reset();
+            FooterStatusText.Text = $"Reset element appearance for '{item.DisplayName}'.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to reset element appearance.", exception);
+            FooterStatusText.Text = $"Could not reset element appearance: {exception.Message}";
+        }
+    }
+
     private async void ApplyAppearanceButton_OnClick(object sender, RoutedEventArgs e)
     {
         try
@@ -596,6 +771,7 @@ public partial class MainWindow : Window
             profile = ProfileEditor.ApplyWidgetEffects(profile, BuildVisualEffectsFromUi(), BuildTextEffectsFromUi());
             await SaveAndActivateProfileAsync();
             RefreshAppearanceUi();
+            RefreshElementAppearanceUi();
             FooterStatusText.Text = $"Applied appearance preset '{SelectedAppearancePreset().Name}'.";
         }
         catch (Exception exception)
@@ -613,6 +789,7 @@ public partial class MainWindow : Window
             profile = ProfileEditor.ApplyWidgetEffects(profile, new EffectSettings(), new EffectSettings());
             await SaveAndActivateProfileAsync();
             RefreshAppearanceUi();
+            RefreshElementAppearanceUi();
             FooterStatusText.Text = "Appearance reset.";
         }
         catch (Exception exception)
@@ -711,6 +888,7 @@ public partial class MainWindow : Window
         {
             SelectedBindingText.Text = "(none)";
             bindingDetailItems.Clear();
+            RefreshBindingInvertUi();
         }
     }
 
@@ -732,6 +910,33 @@ public partial class MainWindow : Window
 
         BindingDetailComboBox.SelectedItem = bindingDetailItems.FirstOrDefault();
         RemoveSelectedBindingButton.IsEnabled = bindingDetailItems.Count > 1;
+        RefreshBindingInvertUi();
+    }
+
+    private void RefreshBindingInvertUi()
+    {
+        bool wasRefreshing = isRefreshingBindingUi;
+        isRefreshingBindingUi = true;
+        try
+        {
+            if (BindingDetailComboBox.SelectedItem is BindingDetailItem binding &&
+                profile.InputSources.FirstOrDefault(source => SourceIdEquals(source.Id, binding.SourceId)) is JoystickAxisInputSource axis)
+            {
+                BindingInvertAxisCheckBox.Visibility = Visibility.Visible;
+                BindingInvertAxisCheckBox.IsEnabled = true;
+                BindingInvertAxisCheckBox.IsChecked = axis.Invert;
+            }
+            else
+            {
+                BindingInvertAxisCheckBox.Visibility = Visibility.Collapsed;
+                BindingInvertAxisCheckBox.IsEnabled = false;
+                BindingInvertAxisCheckBox.IsChecked = false;
+            }
+        }
+        finally
+        {
+            isRefreshingBindingUi = wasRefreshing;
+        }
     }
 
     private void RefreshAppearanceUi()
@@ -745,8 +950,14 @@ public partial class MainWindow : Window
             AppearancePresetComboBox.SelectedItem = selected;
             AppearanceRingColorTextBox.Text = FormatColor(profile.Appearance.RingColor);
             AppearanceActiveColorTextBox.Text = FormatColor(profile.Appearance.ActiveColor);
+            AppearanceFrameColorTextBox.Text = FormatColor(profile.Appearance.FrameColor);
+            AppearanceFrameActiveColorTextBox.Text = FormatColor(profile.Appearance.FrameActiveColor);
             AppearanceScaleSlider.Value = profile.Appearance.WidgetScale;
             AppearanceOpacitySlider.Value = profile.Appearance.Opacity;
+            AppearancePrimaryOpacitySlider.Value = profile.Appearance.PrimaryOpacity;
+            AppearanceActiveOpacitySlider.Value = profile.Appearance.ActiveOpacity;
+            AppearanceFramePrimaryOpacitySlider.Value = profile.Appearance.FramePrimaryOpacity;
+            AppearanceFrameActiveOpacitySlider.Value = profile.Appearance.FrameActiveOpacity;
             EffectSettings visualEffects = CurrentVisualEffects();
             EffectSettings textEffects = CurrentTextEffects();
             AppearanceOutlineCheckBox.IsChecked = visualEffects.OutlineEnabled || textEffects.OutlineEnabled;
@@ -761,6 +972,71 @@ public partial class MainWindow : Window
         finally
         {
             isLoadingAppearance = false;
+        }
+    }
+
+    private void RefreshElementAppearanceUi(string? selectedWidgetId = null)
+    {
+        isLoadingElementAppearance = true;
+        try
+        {
+            widgetAppearanceItems.Clear();
+            foreach (WidgetDefinition widget in profile.Widgets)
+            {
+                widgetAppearanceItems.Add(new WidgetAppearanceItem(widget.Id, widget.DisplayName));
+            }
+
+            string idToSelect = selectedWidgetId ?? (ElementWidgetComboBox.SelectedItem as WidgetAppearanceItem)?.Id ?? profile.Widgets.FirstOrDefault()?.Id ?? string.Empty;
+            ElementWidgetComboBox.SelectedItem = widgetAppearanceItems.FirstOrDefault(item =>
+                SourceIdEquals(item.Id, idToSelect)) ?? widgetAppearanceItems.FirstOrDefault();
+            LoadSelectedElementAppearance();
+        }
+        finally
+        {
+            isLoadingElementAppearance = false;
+        }
+    }
+
+    private void LoadSelectedElementAppearance()
+    {
+        if (ElementWidgetComboBox.SelectedItem is not WidgetAppearanceItem item)
+        {
+            return;
+        }
+
+        WidgetDefinition? widget = profile.Widgets.FirstOrDefault(candidate => SourceIdEquals(candidate.Id, item.Id));
+        if (widget is null)
+        {
+            return;
+        }
+
+        isLoadingElementAppearance = true;
+        try
+        {
+            ElementXSlider.Value = ClampToSlider(widget.X, ElementXSlider);
+            ElementYSlider.Value = ClampToSlider(widget.Y, ElementYSlider);
+            ElementScaleSlider.Value = ClampToSlider(widget.Scale, ElementScaleSlider);
+            ElementOpacitySlider.Value = ClampToSlider(widget.Opacity, ElementOpacitySlider);
+            ElementLineThicknessSlider.Value = ClampToSlider(widget.LineThickness, ElementLineThicknessSlider);
+            ElementThrottleCornerSlider.Value = widget is ThrottleWidgetDefinition throttle
+                ? ClampToSlider(throttle.CornerRadius, ElementThrottleCornerSlider)
+                : ClampToSlider(8.0, ElementThrottleCornerSlider);
+            ElementThrottleCornerRow.Visibility = widget is ThrottleWidgetDefinition ? Visibility.Visible : Visibility.Collapsed;
+            ElementRollAssetPanel.Visibility = widget is RollWidgetDefinition ? Visibility.Visible : Visibility.Collapsed;
+            ElementRollRotationRow.Visibility = widget is RollWidgetDefinition ? Visibility.Visible : Visibility.Collapsed;
+            ElementStateTextShakeCheckBox.Visibility = widget is StateTextWidgetDefinition ? Visibility.Visible : Visibility.Collapsed;
+            ElementStateTextShakeCheckBox.IsChecked = widget is StateTextWidgetDefinition stateText && stateText.Tuning.MaxedShakeEnabled;
+            ElementRollAssetComboBox.SelectedItem = widget is RollWidgetDefinition roll
+                ? rollAssetItems.FirstOrDefault(asset => SourceIdEquals(asset.AssetId, RollAssetSelectionId(roll))) ?? rollAssetItems.FirstOrDefault()
+                : rollAssetItems.FirstOrDefault();
+            ElementRollMaxRotationSlider.Value = widget is RollWidgetDefinition rollWidget
+                ? ClampToSlider(rollWidget.MaxRotationDegrees, ElementRollMaxRotationSlider)
+                : ClampToSlider(60.0, ElementRollMaxRotationSlider);
+            UpdateElementAppearanceValueText();
+        }
+        finally
+        {
+            isLoadingElementAppearance = false;
         }
     }
 
@@ -979,13 +1255,21 @@ public partial class MainWindow : Window
         AppearancePresetItem preset = SelectedAppearancePreset();
         RgbaColor ringColor = TryParseColor(AppearanceRingColorTextBox.Text, preset.RingColor, out _);
         RgbaColor activeColor = TryParseColor(AppearanceActiveColorTextBox.Text, preset.ActiveColor, out _);
+        RgbaColor frameColor = TryParseColor(AppearanceFrameColorTextBox.Text, preset.FrameColor, out _);
+        RgbaColor frameActiveColor = TryParseColor(AppearanceFrameActiveColorTextBox.Text, preset.FrameActiveColor, out _);
         return new AppearanceSettings
         {
             PresetId = preset.Id,
             RingColor = ringColor,
             ActiveColor = activeColor,
+            FrameColor = frameColor,
+            FrameActiveColor = frameActiveColor,
             WidgetScale = AppearanceScaleSlider.Value,
-            Opacity = AppearanceOpacitySlider.Value
+            Opacity = AppearanceOpacitySlider.Value,
+            PrimaryOpacity = AppearancePrimaryOpacitySlider.Value,
+            ActiveOpacity = AppearanceActiveOpacitySlider.Value,
+            FramePrimaryOpacity = AppearanceFramePrimaryOpacitySlider.Value,
+            FrameActiveOpacity = AppearanceFrameActiveOpacitySlider.Value
         };
     }
 
@@ -1040,6 +1324,8 @@ public partial class MainWindow : Window
                 "Clean HUD",
                 new RgbaColor(228, 241, 255, 235),
                 new RgbaColor(255, 84, 84, 255),
+                new RgbaColor(228, 241, 255, 235),
+                new RgbaColor(255, 84, 84, 255),
                 new EffectSettings(),
                 new EffectSettings());
     }
@@ -1048,9 +1334,40 @@ public partial class MainWindow : Window
     {
         AppearanceScaleValueText.Text = $"{AppearanceScaleSlider.Value:0.00}x";
         AppearanceOpacityValueText.Text = $"{AppearanceOpacitySlider.Value:P0}";
+        AppearancePrimaryOpacityValueText.Text = $"{AppearancePrimaryOpacitySlider.Value:P0}";
+        AppearanceActiveOpacityValueText.Text = $"{AppearanceActiveOpacitySlider.Value:P0}";
+        AppearanceFramePrimaryOpacityValueText.Text = $"{AppearanceFramePrimaryOpacitySlider.Value:P0}";
+        AppearanceFrameActiveOpacityValueText.Text = $"{AppearanceFrameActiveOpacitySlider.Value:P0}";
         AppearanceOutlineWidthValueText.Text = $"{AppearanceOutlineWidthSlider.Value:0.0}px";
         AppearanceShadowBlurValueText.Text = $"{AppearanceShadowBlurSlider.Value:0}px";
         AppearanceBackplateOpacityValueText.Text = $"{AppearanceBackplateOpacitySlider.Value:P0}";
+    }
+
+    private void UpdateElementAppearanceValueText()
+    {
+        ElementXValueText.Text = $"{ElementXSlider.Value:0}";
+        ElementYValueText.Text = $"{ElementYSlider.Value:0}";
+        ElementScaleValueText.Text = $"{ElementScaleSlider.Value:0.00}x";
+        ElementOpacityValueText.Text = $"{ElementOpacitySlider.Value:P0}";
+        ElementLineThicknessValueText.Text = $"{ElementLineThicknessSlider.Value:0.0}px";
+        ElementThrottleCornerValueText.Text = $"{ElementThrottleCornerSlider.Value:0}px";
+        ElementRollMaxRotationValueText.Text = $"{ElementRollMaxRotationSlider.Value:0} deg";
+    }
+
+    private string SelectedRollAssetId()
+    {
+        return ElementRollAssetComboBox.SelectedItem is RollAssetItem item
+            ? item.AssetId
+            : RollAssets.Gladius;
+    }
+
+    private static string RollAssetSelectionId(RollWidgetDefinition roll)
+    {
+        return roll.RenderMode == RollRenderMode.Indicator
+            ? RollAssets.Indicator
+            : RollAssets.IsKnown(roll.AssetId) && !SourceIdEquals(roll.AssetId, RollAssets.Indicator)
+            ? roll.AssetId
+            : RollAssets.Gladius;
     }
 
     private void UpdateAppearancePreview()
@@ -1058,19 +1375,27 @@ public partial class MainWindow : Window
         AppearancePresetItem preset = SelectedAppearancePreset();
         RgbaColor ringColor = TryParseColor(AppearanceRingColorTextBox.Text, preset.RingColor, out bool ringValid);
         RgbaColor activeColor = TryParseColor(AppearanceActiveColorTextBox.Text, preset.ActiveColor, out bool activeValid);
+        RgbaColor frameColor = TryParseColor(AppearanceFrameColorTextBox.Text, preset.FrameColor, out bool frameValid);
+        RgbaColor frameActiveColor = TryParseColor(AppearanceFrameActiveColorTextBox.Text, preset.FrameActiveColor, out bool frameActiveValid);
         AppearanceRingColorSwatch.Background = Brush(ringColor, 1.0);
         AppearanceActiveColorSwatch.Background = Brush(activeColor, 1.0);
+        AppearanceFrameColorSwatch.Background = Brush(frameColor, 1.0);
+        AppearanceFrameActiveColorSwatch.Background = Brush(frameActiveColor, 1.0);
         AppearanceRingColorTextBox.BorderBrush = ringValid ? System.Windows.SystemColors.ControlDarkBrush : System.Windows.Media.Brushes.IndianRed;
         AppearanceActiveColorTextBox.BorderBrush = activeValid ? System.Windows.SystemColors.ControlDarkBrush : System.Windows.Media.Brushes.IndianRed;
+        AppearanceFrameColorTextBox.BorderBrush = frameValid ? System.Windows.SystemColors.ControlDarkBrush : System.Windows.Media.Brushes.IndianRed;
+        AppearanceFrameActiveColorTextBox.BorderBrush = frameActiveValid ? System.Windows.SystemColors.ControlDarkBrush : System.Windows.Media.Brushes.IndianRed;
 
-        byte alpha = (byte)Math.Round(activeColor.A * Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0));
+        byte alpha = (byte)Math.Round(activeColor.A *
+            Math.Clamp(AppearanceOpacitySlider.Value, 0.0, 1.0) *
+            Math.Clamp(AppearanceActiveOpacitySlider.Value, 0.0, 1.0));
         AppearancePreviewText.Foreground = new SolidColorBrush(System.Windows.Media.Color.FromArgb(alpha, activeColor.R, activeColor.G, activeColor.B));
         AppearancePreviewText.FontSize = 22 * Math.Clamp(AppearanceScaleSlider.Value, 0.5, 1.75);
         byte backplateAlpha = (byte)Math.Round(255.0 * Math.Clamp(AppearanceBackplateOpacitySlider.Value, 0.0, 0.8));
         AppearancePreviewBackplate.Background = AppearanceBackplateCheckBox.IsChecked == true
             ? new SolidColorBrush(System.Windows.Media.Color.FromArgb(backplateAlpha, 0, 0, 0))
             : System.Windows.Media.Brushes.Transparent;
-        AppearancePreviewBackplate.BorderBrush = Brush(ringColor, 0.45 * AppearanceOpacitySlider.Value);
+        AppearancePreviewBackplate.BorderBrush = Brush(frameColor, 0.45 * AppearanceOpacitySlider.Value * AppearanceFramePrimaryOpacitySlider.Value);
         AppearancePreviewBackplate.BorderThickness = AppearanceOutlineCheckBox.IsChecked == true && AppearanceOutlineWidthSlider.Value > 0.0
             ? new Thickness(Math.Max(1.0, Math.Min(2.0, AppearanceOutlineWidthSlider.Value / 2.0)))
             : new Thickness(0);
@@ -1092,6 +1417,8 @@ public partial class MainWindow : Window
     {
         AppearanceRingColorTextBox.Text = FormatColor(preset.RingColor);
         AppearanceActiveColorTextBox.Text = FormatColor(preset.ActiveColor);
+        AppearanceFrameColorTextBox.Text = FormatColor(preset.FrameColor);
+        AppearanceFrameActiveColorTextBox.Text = FormatColor(preset.FrameActiveColor);
         AppearanceOutlineCheckBox.IsChecked = preset.VisualEffects.OutlineEnabled || preset.TextEffects.OutlineEnabled;
         AppearanceShadowCheckBox.IsChecked = preset.VisualEffects.ShadowEnabled || preset.TextEffects.ShadowEnabled;
         AppearanceBackplateCheckBox.IsChecked = preset.TextEffects.BackplateEnabled;
@@ -1100,11 +1427,39 @@ public partial class MainWindow : Window
         AppearanceBackplateOpacitySlider.Value = preset.TextEffects.BackplateColor.A / 255.0;
     }
 
+    private void PickColorInto(System.Windows.Controls.TextBox target, RgbaColor fallback)
+    {
+        RgbaColor current = TryParseColor(target.Text, fallback, out bool isValid);
+        if (!isValid)
+        {
+            current = fallback;
+        }
+
+        using var dialog = new Forms.ColorDialog
+        {
+            AllowFullOpen = true,
+            AnyColor = true,
+            FullOpen = true,
+            Color = Drawing.Color.FromArgb(current.R, current.G, current.B)
+        };
+
+        if (dialog.ShowDialog() != Forms.DialogResult.OK)
+        {
+            return;
+        }
+
+        target.Text = FormatColor(new RgbaColor(dialog.Color.R, dialog.Color.G, dialog.Color.B, current.A));
+        UpdateAppearancePreview();
+    }
+
+    private static double ClampToSlider(double value, Slider slider)
+    {
+        return Math.Clamp(value, slider.Minimum, slider.Maximum);
+    }
+
     private static string FormatColor(RgbaColor color)
     {
-        return color.A == 255
-            ? FormattableString.Invariant($"#{color.R:X2}{color.G:X2}{color.B:X2}")
-            : FormattableString.Invariant($"#{color.R:X2}{color.G:X2}{color.B:X2}{color.A:X2}");
+        return FormattableString.Invariant($"#{color.R:X2}{color.G:X2}{color.B:X2}");
     }
 
     private static RgbaColor TryParseColor(string? text, RgbaColor fallback, out bool isValid)
@@ -1374,10 +1729,16 @@ public partial class MainWindow : Window
         string Name,
         RgbaColor RingColor,
         RgbaColor ActiveColor,
+        RgbaColor FrameColor,
+        RgbaColor FrameActiveColor,
         EffectSettings VisualEffects,
         EffectSettings TextEffects);
 
     private sealed record BindingDetailItem(string SourceId, string DisplayName, InputSourceKind SourceKind);
+
+    private sealed record WidgetAppearanceItem(string Id, string DisplayName);
+
+    private sealed record RollAssetItem(string AssetId, string DisplayName);
 
     private static IReadOnlyList<AppearancePresetItem> CreateAppearancePresets()
     {
@@ -1388,12 +1749,16 @@ public partial class MainWindow : Window
                 "Clean HUD",
                 new RgbaColor(228, 241, 255, 235),
                 new RgbaColor(255, 84, 84, 255),
+                new RgbaColor(228, 241, 255, 235),
+                new RgbaColor(255, 84, 84, 255),
                 outline: 2.0,
                 shadow: 3.0,
                 backplate: 0.0),
             Preset(
                 "crusader-glass",
                 "Crusader Glass",
+                new RgbaColor(185, 239, 255, 230),
+                new RgbaColor(64, 210, 255, 255),
                 new RgbaColor(185, 239, 255, 230),
                 new RgbaColor(64, 210, 255, 255),
                 outline: 1.5,
@@ -1404,12 +1769,16 @@ public partial class MainWindow : Window
                 "Anvil Amber",
                 new RgbaColor(255, 215, 128, 230),
                 new RgbaColor(255, 164, 64, 255),
+                new RgbaColor(255, 215, 128, 230),
+                new RgbaColor(255, 164, 64, 255),
                 outline: 2.0,
                 shadow: 8.0,
                 backplate: 0.18),
             Preset(
                 "drake-industrial",
                 "Drake Industrial",
+                new RgbaColor(220, 236, 220, 225),
+                new RgbaColor(255, 192, 72, 255),
                 new RgbaColor(220, 236, 220, 225),
                 new RgbaColor(255, 192, 72, 255),
                 outline: 3.0,
@@ -1420,6 +1789,8 @@ public partial class MainWindow : Window
                 "Stealth Green",
                 new RgbaColor(148, 255, 191, 220),
                 new RgbaColor(60, 235, 135, 255),
+                new RgbaColor(148, 255, 191, 220),
+                new RgbaColor(60, 235, 135, 255),
                 outline: 1.5,
                 shadow: 12.0,
                 backplate: 0.22),
@@ -1428,9 +1799,21 @@ public partial class MainWindow : Window
                 "Hostile Red",
                 new RgbaColor(255, 204, 204, 220),
                 new RgbaColor(255, 58, 58, 255),
+                new RgbaColor(255, 204, 204, 220),
+                new RgbaColor(255, 58, 58, 255),
                 outline: 3.0,
                 shadow: 14.0,
                 backplate: 0.28)
+        };
+    }
+
+    private static IReadOnlyList<RollAssetItem> CreateRollAssetItems()
+    {
+        return new[]
+        {
+            new RollAssetItem(RollAssets.Gladius, "Gladius image"),
+            new RollAssetItem(RollAssets.Arrow, "Arrow image"),
+            new RollAssetItem(RollAssets.Indicator, "Indicator arc")
         };
     }
 
@@ -1439,6 +1822,8 @@ public partial class MainWindow : Window
         string name,
         RgbaColor ringColor,
         RgbaColor activeColor,
+        RgbaColor frameColor,
+        RgbaColor frameActiveColor,
         double outline,
         double shadow,
         double backplate)
@@ -1461,6 +1846,6 @@ public partial class MainWindow : Window
             BackplateRadius = 6.0
         };
 
-        return new AppearancePresetItem(id, name, ringColor, activeColor, visualEffects, textEffects);
+        return new AppearancePresetItem(id, name, ringColor, activeColor, frameColor, frameActiveColor, visualEffects, textEffects);
     }
 }

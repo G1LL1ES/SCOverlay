@@ -272,6 +272,35 @@ runner.Test("Profile migrator does not restore removed KBM alternates for curren
     Assert.False(migrated.InputSources.OfType<CompositeAxisInputSource>().Any(source => source.Id == "look-x"));
 });
 
+runner.Test("Profile migrator repairs transparent appearance colors from older saves", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault() with
+    {
+        Appearance = new AppearanceSettings
+        {
+            RingColor = new RgbaColor(0, 0, 0, 0),
+            ActiveColor = new RgbaColor(24, 80, 140, 0),
+            FrameColor = new RgbaColor(0, 0, 0, 0),
+            FrameActiveColor = new RgbaColor(0, 0, 0, 0),
+            PrimaryOpacity = 1.0,
+            ActiveOpacity = 0.85,
+            FramePrimaryOpacity = 1.0,
+            FrameActiveOpacity = 1.0
+        }
+    };
+
+    OverlayProfile migrated = ProfileMigrator.Migrate(profile);
+
+    Assert.Equal((byte)255, migrated.Appearance.RingColor.A);
+    Assert.Equal((byte)255, migrated.Appearance.ActiveColor.A);
+    Assert.Equal((byte)255, migrated.Appearance.FrameColor.A);
+    Assert.Equal((byte)255, migrated.Appearance.FrameActiveColor.A);
+    Assert.Equal(migrated.Appearance.RingColor, migrated.Appearance.FrameColor);
+    Assert.Equal(migrated.Appearance.ActiveColor, migrated.Appearance.FrameActiveColor);
+    Assert.Equal(1.0, migrated.Appearance.PrimaryOpacity);
+    Assert.Equal(0.85, migrated.Appearance.ActiveOpacity);
+});
+
 runner.Test("Profile editor creates safe profile copies", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
@@ -346,6 +375,59 @@ runner.Test("Profile editor adds joystick axis as an alternate to a virtual KBM 
 
     Assert.Equal(1.0, InputSourceEvaluator.Evaluate(updated.InputSources, keyboardSnapshot).GetAxis("look-x"));
     Assert.Equal(-0.7, InputSourceEvaluator.Evaluate(updated.InputSources, joystickSnapshot).GetAxis("look-x"));
+});
+
+runner.Test("Profile editor inverts only selected controller axis bindings", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var captured = new JoystickAxisInputSource
+    {
+        Id = "captured-axis",
+        DisplayName = "Captured Axis",
+        DeviceId = "hid:stick",
+        AxisIndex = 2
+    };
+
+    OverlayProfile mixed = ProfileEditor.ReplaceInputSource(profile, "look-x", captured);
+    CompositeAxisInputSource lookX = mixed.InputSources.OfType<CompositeAxisInputSource>().Single(source => source.Id == "look-x");
+    string controllerBindingId = lookX.Components
+        .Select(component => component.SourceId)
+        .Single(id => mixed.InputSources.OfType<JoystickAxisInputSource>().Any(source => source.Id == id));
+
+    OverlayProfile inverted = ProfileEditor.SetJoystickAxisInverted(mixed, controllerBindingId, true);
+    var keyboardSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("Right")] = true
+        });
+    var joystickSnapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("hid:stick", 2)] = 0.7
+        },
+        new Dictionary<string, bool>());
+
+    Assert.True(inverted.InputSources.OfType<JoystickAxisInputSource>().Single(source => source.Id == controllerBindingId).Invert);
+    Assert.Equal(1.0, InputSourceEvaluator.Evaluate(inverted.InputSources, keyboardSnapshot).GetAxis("look-x"));
+    Assert.Equal(-0.7, InputSourceEvaluator.Evaluate(inverted.InputSources, joystickSnapshot).GetAxis("look-x"));
+
+    bool rejectedKeyboardAxis = false;
+    try
+    {
+        string keyboardBindingId = lookX.Components
+            .Select(component => component.SourceId)
+            .Single(id => inverted.InputSources.OfType<VirtualButtonAxisInputSource>().Any(source => source.Id == id));
+        ProfileEditor.SetJoystickAxisInverted(inverted, keyboardBindingId, true);
+    }
+    catch (InvalidOperationException)
+    {
+        rejectedKeyboardAxis = true;
+    }
+
+    Assert.True(rejectedKeyboardAxis);
 });
 
 runner.Test("Profile editor adds button captures as alternate button bindings", () =>
@@ -538,7 +620,13 @@ runner.Test("Profile editor applies appearance with safe limits", () =>
         PresetId = "test",
         RingColor = new RgbaColor(10, 20, 30, 200),
         ActiveColor = new RgbaColor(200, 80, 40, 255),
+        FrameColor = new RgbaColor(1, 2, 3, 128),
+        FrameActiveColor = new RgbaColor(4, 5, 6, 200),
         Opacity = 2.0,
+        PrimaryOpacity = -1.0,
+        ActiveOpacity = 3.0,
+        FramePrimaryOpacity = -0.5,
+        FrameActiveOpacity = 2.0,
         WidgetScale = 0.1
     };
 
@@ -546,8 +634,98 @@ runner.Test("Profile editor applies appearance with safe limits", () =>
 
     Assert.Equal("test", updated.Appearance.PresetId);
     Assert.Equal(1.0, updated.Appearance.Opacity);
+    Assert.Equal(0.0, updated.Appearance.PrimaryOpacity);
+    Assert.Equal(1.0, updated.Appearance.ActiveOpacity);
+    Assert.Equal(0.0, updated.Appearance.FramePrimaryOpacity);
+    Assert.Equal(1.0, updated.Appearance.FrameActiveOpacity);
     Assert.Equal(0.5, updated.Appearance.WidgetScale);
     Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
+runner.Test("Profile editor strips embedded color alpha when applying appearance", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var appearance = new AppearanceSettings
+    {
+        RingColor = new RgbaColor(20, 30, 40, 0),
+        ActiveColor = new RgbaColor(50, 60, 70, 128),
+        FrameColor = new RgbaColor(0, 0, 0, 0),
+        FrameActiveColor = new RgbaColor(80, 90, 100, 0),
+        PrimaryOpacity = 0.7,
+        ActiveOpacity = 0.8,
+        FramePrimaryOpacity = 0.9,
+        FrameActiveOpacity = 1.0
+    };
+
+    OverlayProfile updated = ProfileEditor.ApplyAppearance(profile, appearance);
+
+    Assert.Equal(new RgbaColor(20, 30, 40, 255), updated.Appearance.RingColor);
+    Assert.Equal(new RgbaColor(50, 60, 70, 255), updated.Appearance.ActiveColor);
+    Assert.Equal(new RgbaColor(20, 30, 40, 255), updated.Appearance.FrameColor);
+    Assert.Equal(new RgbaColor(80, 90, 100, 255), updated.Appearance.FrameActiveColor);
+    Assert.Equal(0.7, updated.Appearance.PrimaryOpacity);
+    Assert.Equal(0.8 * (128.0 / 255.0), updated.Appearance.ActiveOpacity);
+    Assert.Equal(0.9, updated.Appearance.FramePrimaryOpacity);
+    Assert.Equal(1.0, updated.Appearance.FrameActiveOpacity);
+});
+
+runner.Test("Profile editor applies per-widget appearance with safe limits", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+
+    OverlayProfile updated = ProfileEditor.ApplyWidgetAppearance(
+        profile,
+        "roll-widget",
+        x: 1300.0,
+        y: -1300.0,
+        scale: 5.0,
+        opacity: -1.0,
+        lineThickness: 99.0,
+        throttleCornerRadius: 99.0,
+        rollAssetId: RollAssets.Indicator,
+        rollMaxRotationDegrees: 500.0,
+        stateTextMaxedShakeEnabled: true);
+
+    RollWidgetDefinition roll = updated.Widgets.OfType<RollWidgetDefinition>().Single(widget => widget.Id == "roll-widget");
+    Assert.Equal(1000.0, roll.X);
+    Assert.Equal(-1000.0, roll.Y);
+    Assert.Equal(3.0, roll.Scale);
+    Assert.Equal(0.0, roll.Opacity);
+    Assert.Equal(20.0, roll.LineThickness);
+    Assert.Equal(RollAssets.Indicator, roll.AssetId);
+    Assert.Equal(RollRenderMode.Indicator, roll.RenderMode);
+    Assert.Equal(180.0, roll.MaxRotationDegrees);
+    Assert.True(ProfileValidator.Validate(updated).IsValid);
+});
+
+runner.Test("Profile editor resets widget appearance to defaults", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    profile = ProfileEditor.ApplyWidgetAppearance(
+        profile,
+        "roll-widget",
+        x: 500.0,
+        y: 300.0,
+        scale: 2.0,
+        opacity: 0.25,
+        lineThickness: 12.0,
+        throttleCornerRadius: 20.0,
+        rollAssetId: RollAssets.Arrow,
+        rollMaxRotationDegrees: 120.0,
+        stateTextMaxedShakeEnabled: true);
+
+    OverlayProfile updated = ProfileEditor.ResetWidgetAppearance(profile, "roll-widget");
+
+    RollWidgetDefinition roll = updated.Widgets.OfType<RollWidgetDefinition>().Single(widget => widget.Id == "roll-widget");
+    RollWidgetDefinition defaultRoll = DefaultProfiles.CreateKbmDefault().Widgets.OfType<RollWidgetDefinition>().Single(widget => widget.Id == "roll-widget");
+    Assert.Equal(defaultRoll.X, roll.X);
+    Assert.Equal(defaultRoll.Y, roll.Y);
+    Assert.Equal(defaultRoll.Scale, roll.Scale);
+    Assert.Equal(defaultRoll.Opacity, roll.Opacity);
+    Assert.Equal(defaultRoll.LineThickness, roll.LineThickness);
+    Assert.Equal(defaultRoll.AssetId, roll.AssetId);
+    Assert.Equal(defaultRoll.RenderMode, roll.RenderMode);
+    Assert.Equal(defaultRoll.MaxRotationDegrees, roll.MaxRotationDegrees);
 });
 
 runner.Test("Profile editor applies widget effects with safe limits", () =>
@@ -794,6 +972,55 @@ runner.Test("Overlay state engine applies deadzone and zero snap", () =>
     Assert.True(throttle.Connected);
 });
 
+runner.Test("Overlay state engine reports throttle fill from center", () =>
+{
+    var profile = new OverlayProfile
+    {
+        Id = "throttle-center-test",
+        Name = "Throttle Center Test",
+        InputSources = new InputSource[]
+        {
+            new JoystickAxisInputSource
+            {
+                Id = "axis",
+                DisplayName = "Axis",
+                DeviceId = "joystick:0",
+                AxisIndex = 0
+            }
+        },
+        Widgets = new WidgetDefinition[]
+        {
+            new ThrottleWidgetDefinition
+            {
+                Id = "throttle",
+                DisplayName = "Throttle",
+                SourceId = "axis",
+                Tuning = new AxisTuning
+                {
+                    InputNoiseGate = 0,
+                    ValueSmoothingSpeed = 0,
+                    MaxThrowRatio = 0.8
+                }
+            }
+        }
+    };
+
+    OverlayState idleState = new OverlayStateEngine().BuildState(profile, AxisSnapshot(DateTimeOffset.UtcNow, 0.0));
+    ThrottleWidgetState idleThrottle = idleState.Widgets.OfType<ThrottleWidgetState>().Single();
+    Assert.Equal(0.0, idleThrottle.Value);
+    Assert.Equal(0.0, idleThrottle.FillRatio);
+
+    OverlayState forwardState = new OverlayStateEngine().BuildState(profile, AxisSnapshot(DateTimeOffset.UtcNow, 1.0));
+    ThrottleWidgetState forwardThrottle = forwardState.Widgets.OfType<ThrottleWidgetState>().Single();
+    Assert.Equal(0.8, forwardThrottle.Value);
+    Assert.Equal(1.0, forwardThrottle.FillRatio);
+
+    OverlayState reverseState = new OverlayStateEngine().BuildState(profile, AxisSnapshot(DateTimeOffset.UtcNow, -0.5));
+    ThrottleWidgetState reverseThrottle = reverseState.Widgets.OfType<ThrottleWidgetState>().Single();
+    Assert.Equal(-0.4, reverseThrottle.Value);
+    Assert.Equal(0.5, reverseThrottle.FillRatio);
+});
+
 runner.Test("Overlay state engine smooths axis values across samples", () =>
 {
     var profile = new OverlayProfile
@@ -868,6 +1095,41 @@ runner.Test("Overlay state engine computes button and axis state text intensity"
     Assert.Equal(0.0, brake.Intensity);
 });
 
+runner.Test("Overlay state engine emits maxed shake for state text", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("LeftShift")] = true
+        });
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, snapshot);
+    StateTextWidgetState boost = state.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "boost-widget");
+    Assert.True(boost.ShakeIntensity > 0.9);
+
+    OverlayProfile disabled = profile with
+    {
+        Widgets = profile.Widgets
+            .Select(widget => widget is StateTextWidgetDefinition stateText && stateText.Id == "boost-widget"
+                ? stateText with
+                {
+                    Tuning = stateText.Tuning with
+                    {
+                        MaxedShakeEnabled = false
+                    }
+                }
+                : widget)
+            .ToArray()
+    };
+
+    OverlayState disabledState = new OverlayStateEngine().BuildState(disabled, snapshot);
+    StateTextWidgetState disabledBoost = disabledState.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "boost-widget");
+    Assert.Equal(0.0, disabledBoost.ShakeIntensity);
+});
+
 runner.Test("Overlay state engine treats state text axes as unipolar intensity", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateHotasReference();
@@ -908,6 +1170,8 @@ runner.Test("Overlay state engine applies profile appearance", () =>
             PresetId = "test",
             RingColor = new RgbaColor(10, 20, 30, 200),
             ActiveColor = new RgbaColor(200, 80, 40, 255),
+            FrameColor = new RgbaColor(40, 50, 60, 220),
+            FrameActiveColor = new RgbaColor(80, 90, 100, 240),
             Opacity = 0.5,
             WidgetScale = 1.25
         }
@@ -929,6 +1193,131 @@ runner.Test("Overlay state engine applies profile appearance", () =>
     Assert.Equal((byte)10, throttle.RingColor.R);
     Assert.Equal((byte)100, throttle.RingColor.A);
     Assert.Equal((byte)128, throttle.ActiveColor.A);
+    Assert.Equal((byte)40, throttle.FrameColor.R);
+    Assert.Equal((byte)110, throttle.FrameColor.A);
+    Assert.Equal((byte)120, throttle.FrameActiveColor.A);
+});
+
+runner.Test("Overlay state engine applies widget appearance", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault() with
+    {
+        Appearance = new AppearanceSettings
+        {
+            RingColor = new RgbaColor(10, 20, 30, 200),
+            ActiveColor = new RgbaColor(200, 80, 40, 255),
+            FrameColor = new RgbaColor(90, 100, 110, 240),
+            FrameActiveColor = new RgbaColor(120, 130, 140, 255),
+            Opacity = 0.5,
+            PrimaryOpacity = 0.25,
+            ActiveOpacity = 0.75,
+            FramePrimaryOpacity = 1.0,
+            FrameActiveOpacity = 0.5,
+            WidgetScale = 1.0
+        },
+        Widgets = DefaultProfiles.CreateKbmDefault().Widgets
+            .Select(widget => widget.Id == "roll-widget"
+                ? ((RollWidgetDefinition)widget) with
+                {
+                    Scale = 1.5,
+                    Opacity = 0.8,
+                    LineThickness = 7.0,
+                    RenderMode = RollRenderMode.Indicator,
+                    MaxRotationDegrees = 90.0
+                }
+                : widget)
+            .ToArray()
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.KeyboardButton("E")] = true
+        });
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, snapshot);
+    RollWidgetState roll = state.Widgets.OfType<RollWidgetState>().Single();
+
+    Assert.Equal(243.75, roll.Width);
+    Assert.Equal(168.75, roll.Height);
+    Assert.Equal(7.0, roll.LineThickness);
+    Assert.Equal(RollRenderMode.Indicator, roll.RenderMode);
+    Assert.Equal(90.0, roll.RotationDegrees);
+    Assert.Equal((byte)20, roll.RingColor.A);
+    Assert.Equal((byte)77, roll.ActiveColor.A);
+    Assert.Equal((byte)51, roll.FrameDisplayColor.A);
+});
+
+runner.Test("Overlay state engine keeps frame visible when input primary alpha is hidden", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault() with
+    {
+        Appearance = new AppearanceSettings
+        {
+            RingColor = new RgbaColor(10, 20, 30, 255),
+            ActiveColor = new RgbaColor(200, 80, 40, 255),
+            FrameColor = new RgbaColor(50, 60, 70, 255),
+            FrameActiveColor = new RgbaColor(150, 160, 170, 255),
+            Opacity = 1.0,
+            PrimaryOpacity = 0.0,
+            ActiveOpacity = 1.0,
+            FramePrimaryOpacity = 1.0,
+            FrameActiveOpacity = 1.0
+        }
+    };
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>()));
+    StickWidgetState strafe = state.Widgets.OfType<StickWidgetState>().Single(widget => widget.Id == "strafe-widget");
+
+    Assert.Equal((byte)0, strafe.DisplayColor.A);
+    Assert.Equal((byte)255, strafe.FrameDisplayColor.A);
+    Assert.Equal((byte)220, strafe.VisualEffects.OutlineColor.A);
+});
+
+runner.Test("Overlay state engine applies blended display alpha to effects", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateKbmDefault() with
+    {
+        Appearance = new AppearanceSettings
+        {
+            RingColor = new RgbaColor(10, 20, 30, 255),
+            ActiveColor = new RgbaColor(200, 80, 40, 255),
+            Opacity = 1.0,
+            PrimaryOpacity = 0.0,
+            ActiveOpacity = 1.0
+        },
+        Widgets = DefaultProfiles.CreateKbmDefault().Widgets
+            .Select(widget => widget.Id == "boost-widget"
+                ? ((StateTextWidgetDefinition)widget) with
+                {
+                    TextEffects = new EffectSettings
+                    {
+                        OutlineEnabled = true,
+                        OutlineColor = new RgbaColor(0, 0, 0, 255),
+                        ShadowEnabled = true,
+                        ShadowColor = new RgbaColor(0, 0, 0, 255),
+                        BackplateEnabled = true,
+                        BackplateColor = new RgbaColor(0, 0, 0, 255)
+                    }
+                }
+                : widget)
+            .ToArray()
+    };
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>()));
+    StateTextWidgetState boost = state.Widgets.OfType<StateTextWidgetState>().Single(widget => widget.Id == "boost-widget");
+
+    Assert.Equal((byte)0, boost.DisplayColor.A);
+    Assert.Equal((byte)0, boost.TextEffects.OutlineColor.A);
+    Assert.Equal((byte)0, boost.TextEffects.ShadowColor.A);
+    Assert.Equal((byte)0, boost.TextEffects.BackplateColor.A);
 });
 
 runner.Test("Overlay state sampler polls input and publishes renderer-neutral state", () =>
@@ -993,15 +1382,22 @@ runner.Test("Browser source serves OBS page, state JSON, and assets", () =>
     string json = client.GetStringAsync("/state").GetAwaiter().GetResult();
     string assets = client.GetStringAsync("/assets").GetAwaiter().GetResult();
     string svg = client.GetStringAsync("/assets/roll-indicator-default.svg").GetAwaiter().GetResult();
+    byte[] gladius = client.GetByteArrayAsync("/assets/roll-indicator-gladius.png").GetAwaiter().GetResult();
+    byte[] arrow = client.GetByteArrayAsync("/assets/roll-indicator-arrow.png").GetAwaiter().GetResult();
     server.UpdateState(OverlayState.Empty("updated-profile"));
     string updatedJson = client.GetStringAsync("/state").GetAwaiter().GetResult();
 
     Assert.True(html.Contains("<canvas", StringComparison.OrdinalIgnoreCase));
     Assert.True(html.Contains("fetch('/state'", StringComparison.Ordinal));
+    Assert.True(html.Contains("function tintImage", StringComparison.Ordinal));
     Assert.True(json.Contains("\"profileId\":\"kbm-default\"", StringComparison.Ordinal));
     Assert.True(json.Contains("\"type\":\"stateText\"", StringComparison.Ordinal));
     Assert.True(assets.Contains("roll-indicator-default", StringComparison.Ordinal));
+    Assert.True(assets.Contains("roll-indicator-gladius", StringComparison.Ordinal));
+    Assert.True(assets.Contains("roll-indicator-arrow", StringComparison.Ordinal));
     Assert.True(svg.Contains("<svg", StringComparison.OrdinalIgnoreCase));
+    Assert.True(gladius.Length > 1000);
+    Assert.True(arrow.Length > 1000);
     Assert.True(updatedJson.Contains("\"profileId\":\"updated-profile\"", StringComparison.Ordinal));
 });
 

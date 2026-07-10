@@ -1,38 +1,8 @@
 # SC Overlay
 
-SC Overlay is a Windows overlay for showing Star Citizen flight inputs in OBS or on your desktop. It is a clean C#/.NET rewrite of an older Python project, built around first-class keyboard, mouse button, joystick, HOTAS, HOSAS, and mixed-device setups.
+SC Overlay is a Windows overlay for showing Star Citizen flight inputs in OBS or directly on your desktop. It supports keyboard, mouse buttons, joystick, HOTAS, HOSAS, and mixed-device setups, so you can bind the controls you actually fly with instead of forcing everything into one device type.
 
-The goal is simple: bind the controls you actually fly with, customize how the HUD looks, and expose the same live overlay state to OBS and the desktop overlay without editing Python files or hand-writing JSON.
-
-## Current Status
-
-This is an early 1.0 candidate for real-world testing. It is usable, but it is not polished like a signed commercial app.
-
-Working today:
-
-- Keyboard key capture.
-- Mouse button capture.
-- HID/joystick axis and button capture.
-- Mixed-device profiles, such as keyboard plus right stick, stick plus mouse buttons, or HOTAS/HOSAS combinations.
-- Default keyboard/mouse and HOTAS reference profiles.
-- Profile creation, import, export, save, and device refresh from the app UI.
-- OBS browser source served locally by the app.
-- Transparent desktop overlay with show, lock, click-through, move, resize, reset, and tray controls.
-- Appearance presets, color pickers, opacity controls, line/effect controls, per-element position, per-element scale, and per-element opacity.
-- Roll indicator as either a rotating image or a classic indicator.
-- Seeded roll images from the original SC Overlay reference project.
-- Boost and brake state text, including optional shake when fully engaged.
-- Live diagnostics for devices, raw input, and profile-evaluated values.
-- Local diagnostics export and an Open Logs Folder action for support.
-- Portable self-contained Windows release package.
-- Rotating session logs under `%AppData%\SCOverlay\logs`.
-
-Not done yet:
-
-- The app is not code-signed, so Windows SmartScreen may complain.
-- There is no installer yet. The current release is a portable zip.
-- Some unusual HID devices may still need better diagnostics, reconnect handling, or calibration tools.
-- This is not affiliated with, endorsed by, or supported by Cloud Imperium Games.
+The app is built for normal use: install the portable release, bind your controls, customize the HUD, copy the OBS URL if you stream, and fly. You should not need to edit Python files, hand-write JSON, install the .NET runtime, or do weird dev-machine nonsense just to make the overlay work.
 
 ## Blunt Disclaimer
 
@@ -40,54 +10,61 @@ This app was built by a dumb human who needed an LLM to help write it. That does
 
 Use it at your own risk. If it breaks, misreads an input, looks weird in OBS, or eats a profile, that is on the project, not on Star Citizen, CIG, Microsoft, OBS, your joystick manufacturer, or the moon.
 
+## What It Does
+
+SC Overlay can:
+
+- Show live flight input widgets in OBS through a local browser source.
+- Show the same overlay on your desktop with a transparent always-on-top window.
+- Capture keyboard keys, mouse buttons, joystick buttons, joystick axes, and Raw HID inputs.
+- Mix device types in one profile, such as keyboard plus right stick, mouse buttons plus throttle, or full HOTAS/HOSAS setups.
+- Let you create, save, import, and export profiles from the app.
+- Let you customize colors, opacity, widget scale, widget position, line thickness, rounded corners, shadows, outlines, and text backing.
+- Show roll as a rotating ship image or as a classic indicator.
+- Use seeded roll images from the original SC Overlay reference project.
+- Show boost and brake state text, including optional shake when fully engaged.
+- Export local diagnostics when something is not behaving correctly.
+- Keep local session logs for troubleshooting.
+
+SC Overlay is unofficial and is not affiliated with, endorsed by, or supported by Cloud Imperium Games.
+
 ## Requirements
 
 - Windows 10 or Windows 11.
 - A normal x64 PC.
-- OBS Studio if you want the browser source overlay.
 - Star Citizen if you want to use it in-game.
-- Administrator launch may be required when Star Citizen is focused. See [Running With Star Citizen Focused](#running-with-star-citizen-focused).
+- OBS Studio if you want the browser source overlay.
 
-The normal portable build is self-contained. You should not need to install the .NET runtime.
+The normal portable release is self-contained. You should not need to install the .NET runtime.
 
-## Installation
+## Download And Install
 
-1. Download the latest portable zip from the GitHub Releases page.
-2. Extract the zip to a normal folder, such as:
-
-   ```text
-   C:\Users\<you>\Apps\SCOverlay
-   ```
-
-3. Run `SCOverlay.exe`.
-4. If Windows SmartScreen warns you, choose **More info** and then **Run anyway** if you trust the build.
+1. Download the latest portable zip from the [GitHub Releases page](https://github.com/G1LL1ES/SCOverlay/releases).
+2. Extract the zip to a normal folder, such as your Desktop, Documents folder, or an Apps folder.
+3. Open the extracted folder.
+4. Run `SCOverlay.exe`.
+5. If Windows SmartScreen warns you, choose **More info** and then **Run anyway** if you trust the release.
 
 Do not run the app directly from inside the zip. Extract it first.
+
+SC Overlay is intentionally unsigned. Windows may warn you because this is a free portable build without a maintained code-signing certificate.
 
 ## Updating
 
 1. Close SC Overlay.
-2. Extract the new zip over the old app folder, or extract it to a fresh folder.
-3. Run `SCOverlay.exe`.
+2. Download the newer portable zip.
+3. Extract it over the old app folder, or extract it to a fresh folder.
+4. Run `SCOverlay.exe`.
 
-Profiles and settings are stored outside the app folder under `%AppData%\SCOverlay`, so replacing the app files should not delete your profiles.
+Your profiles and settings live outside the app folder, so replacing the app files should not delete your setup.
 
 ## First Launch
 
-On first launch, SC Overlay creates its runtime folders under:
+On first launch, SC Overlay creates default profiles and opens the main app window.
 
-```text
-%AppData%\SCOverlay
-```
+The main tabs are:
 
-It also creates default profiles:
-
-- **Keyboard and Mouse Default**
-- **HOTAS Reference**
-
-The main window contains these tabs:
-
-- **Setup**: profile selection, profile import/export, OBS URL, desktop overlay controls, and detected devices.
+- **Setup**: profile selection, profile import/export, OBS URL, desktop overlay controls, logs, diagnostics export, and detected devices.
 - **Bindings**: bind each action to keyboard keys, mouse buttons, joystick buttons, or joystick axes.
 - **Appearance**: global colors, opacity, effects, and presets.
 - **Elements**: per-widget position, scale, opacity, roll mode, rotation, throttle shape, and boost/brake shake behavior.
@@ -95,94 +72,24 @@ The main window contains these tabs:
 
 ![SC Overlay Setup tab](docs/screenshots/setup.png)
 
-## Running With Star Citizen Focused
+## Setup Tab
 
-If SC Overlay works on the desktop but stops updating while Star Citizen is focused, run SC Overlay as administrator.
+Use **Setup** to choose the active profile, manage profiles, start the desktop overlay, and copy the OBS browser source URL.
 
-This happens because Windows blocks lower-privilege apps from observing input while a higher-privilege app is focused. If Star Citizen is running elevated, SC Overlay needs to be elevated too.
+The detected devices list shows what SC Overlay can currently see from Windows. If you plug in or unplug devices, use **Refresh Devices** before binding controls.
 
-Portable build:
+Useful buttons:
 
-1. Right-click `SCOverlay.exe`.
-2. Choose **Run as administrator**.
+- **Save Profile** saves changes to the current profile.
+- **New Profile** creates a profile copy you can customize.
+- **Import Profile** loads a profile JSON file.
+- **Export Profile** saves the current profile as a JSON file you can back up or share.
+- **Open Logs Folder** opens the local log folder.
+- **Export Diagnostics** creates a local diagnostic report you can inspect or share when troubleshooting.
 
-PowerShell development run:
+## Bindings Tab
 
-1. Open the Start Menu.
-2. Search for `PowerShell`.
-3. Right-click **Windows PowerShell**.
-4. Choose **Run as administrator**.
-5. Run:
-
-   ```powershell
-   cd X:\CodexProjects\SCOverlay
-   dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Release
-   ```
-
-## OBS Browser Source
-
-SC Overlay serves a local browser source while the app is running.
-
-1. Start SC Overlay.
-2. Go to the **Setup** tab.
-3. Copy the OBS browser source URL shown in the app.
-4. In OBS, add a **Browser** source.
-5. Paste the URL.
-6. Set the browser source size to match your desired canvas area.
-
-The OBS source updates live as the app samples inputs. The server is local by default and is intended for the same machine running OBS.
-
-If the default OBS port is already in use, SC Overlay attempts to fall back to another available local port and shows the temporary URL in the app.
-
-## Desktop Overlay
-
-The desktop overlay is a transparent always-on-top overlay window.
-
-Controls are available from the **Setup** tab and the system tray icon:
-
-- **Show**: opens or hides the desktop overlay.
-- **Locked**: prevents moving/resizing the overlay.
-- **Click-through**: lets mouse clicks pass through the overlay to the window underneath. Enabling click-through also locks the overlay.
-- **Reset Position**: restores the desktop overlay to its default placement.
-
-To move or resize the overlay:
-
-1. Turn on **Show**.
-2. Turn off **Locked**.
-3. Turn off **Click-through** if it is enabled.
-4. Drag or resize the desktop overlay.
-5. Lock it again when placed.
-
-Resizing scales the rendered HUD to the overlay window. Use the per-element scale and position controls when you want to rearrange individual widgets instead of scaling the whole overlay.
-
-## Profiles
-
-Profiles define what inputs drive the overlay and how the widgets look.
-
-From the **Setup** tab you can:
-
-- Select the active profile.
-- Create a new profile copy.
-- Save the current profile.
-- Import a profile JSON file.
-- Export the current profile.
-- Refresh detected devices.
-
-Profiles are stored here:
-
-```text
-%AppData%\SCOverlay\profiles
-```
-
-Profile backups are stored here:
-
-```text
-%AppData%\SCOverlay\profile-backups
-```
-
-## Bindings
-
-Use the **Bindings** tab to bind overlay actions to your real controls.
+Use **Bindings** to connect overlay actions to your real controls.
 
 ![SC Overlay Bindings tab](docs/screenshots/bindings.png)
 
@@ -199,7 +106,7 @@ Common actions include:
 
 To bind an action:
 
-1. Select the action in the bindings list.
+1. Select the action.
 2. Choose the capture type when applicable.
 3. Click **Capture**.
 4. Press the key, mouse button, joystick button, or move the joystick axis you want to bind.
@@ -213,13 +120,13 @@ To remove a binding:
 
 Keyboard inputs and controller inputs can live in the same profile. You do not need separate profiles just because one action comes from a keyboard and another comes from a joystick.
 
-When multiple devices can affect the same final overlay action, SC Overlay evaluates the active bindings together and uses the current input state to drive the renderer. Keyboard-style button pairs become virtual axes, so digital controls can still drive analog-looking widgets.
+When multiple devices affect the same final overlay action, SC Overlay evaluates the active bindings together and uses the current input state to drive the renderer. Keyboard-style button pairs become virtual axes, so digital controls can still drive analog-looking widgets.
 
-Controller axis inversion is available for controller inputs. Keyboard inputs do not need axis inversion because their virtual axes are defined by the positive and negative button bindings.
+Controller axis inversion is available for controller inputs. Keyboard inputs do not need axis inversion because their virtual axes are defined by positive and negative button bindings.
 
-## Appearance
+## Appearance Tab
 
-The **Appearance** tab controls the global look of the overlay.
+Use **Appearance** to control the global look of the overlay.
 
 ![SC Overlay Appearance tab](docs/screenshots/appearance.png)
 
@@ -242,11 +149,11 @@ Available controls include:
 
 Color pickers are built in, so you do not need to look up hex codes.
 
-Input colors affect the element showing the actual input reading. Frame colors affect the surrounding widget frame, dividers, and related non-input structure. This split lets you make subtle frames with bright active input, or the other way around.
+Input colors affect the element showing the actual input reading. Frame colors affect the surrounding widget frame, dividers, and related non-input structure. This split lets you make subtle frames with bright active input, bright frames with subtle input, or anything in between.
 
-## Elements
+## Elements Tab
 
-The **Elements** tab controls individual widgets.
+Use **Elements** to customize individual widgets.
 
 ![SC Overlay Elements tab](docs/screenshots/elements.png)
 
@@ -267,15 +174,15 @@ Widget-specific controls include:
 - **Throttle**: rounded corners and center-anchored forward/reverse fill.
 - **Boost/Brake**: optional shake when maxed.
 
-Click **Apply** to write the changes into the active profile. Click **Reset** to reset the selected widget's appearance settings.
+Click **Apply** to write changes into the active profile. Click **Reset** to reset the selected widget's appearance settings.
 
-## Diagnostics
+## Diagnostics Tab
 
-The **Diagnostics** tab is where you go when something feels wrong.
+Use **Diagnostics** when something feels wrong.
 
 ![SC Overlay Diagnostics tab](docs/screenshots/diagnostics.png)
 
-It shows:
+Diagnostics show:
 
 - Detected input devices.
 - Device names and available counts where the app can discover them.
@@ -283,66 +190,93 @@ It shows:
 - Raw keyboard, mouse, joystick, and HID input snapshots.
 - Evaluated profile values, such as final strafe, look, throttle, roll, boost, and brake values.
 
-Use diagnostics to answer these questions:
+Use diagnostics to answer three important questions:
 
 - Does Windows expose the device to SC Overlay?
 - Does the raw input value change when I press or move the control?
 - Does the active profile convert that raw input into the overlay value I expected?
 
-The **Setup** tab also has support buttons:
-
-- **Open Logs Folder** opens `%AppData%\SCOverlay\logs`.
-- **Export Diagnostics** writes a local JSON report under `%AppData%\SCOverlay\diagnostics`.
-
 Diagnostics stay on your machine unless you choose to share the exported file.
+
+## OBS Browser Source
+
+SC Overlay serves a local browser source while the app is running.
+
+1. Start SC Overlay.
+2. Go to **Setup**.
+3. Copy the OBS browser source URL shown in the app.
+4. In OBS, add a **Browser** source.
+5. Paste the URL.
+6. Set the browser source size to match your desired canvas area.
+
+The OBS source updates live as SC Overlay samples inputs. The server is local by default and is intended for the same machine running OBS.
+
+If the default OBS port is already in use, SC Overlay attempts to fall back to another available local port and shows the temporary URL in the app.
+
+## Desktop Overlay
+
+The desktop overlay is a transparent always-on-top overlay window.
+
+Controls are available from **Setup** and from the system tray icon:
+
+- **Show** opens or hides the desktop overlay.
+- **Locked** prevents moving or resizing the overlay.
+- **Click-through** lets mouse clicks pass through the overlay to the window underneath. Enabling click-through also locks the overlay.
+- **Reset Position** restores the desktop overlay to its default placement.
+
+To move or resize the overlay:
+
+1. Turn on **Show**.
+2. Turn off **Locked**.
+3. Turn off **Click-through** if it is enabled.
+4. Drag or resize the desktop overlay.
+5. Lock it again when placed.
+
+Resizing scales the rendered HUD to the overlay window. Use the per-element scale and position controls when you want to rearrange individual widgets instead of scaling the whole overlay.
+
+## Running With Star Citizen Focused
+
+If SC Overlay works on the desktop but stops updating while Star Citizen is focused, run SC Overlay as administrator.
+
+This happens because Windows blocks lower-privilege apps from observing input while a higher-privilege app is focused. If Star Citizen is running elevated, SC Overlay needs to be elevated too.
+
+To run the portable app as administrator:
+
+1. Close SC Overlay.
+2. Right-click `SCOverlay.exe`.
+3. Choose **Run as administrator**.
 
 ## Files And Data
 
-SC Overlay stores user data under:
+SC Overlay stores your user data in your Windows AppData folder. The important pieces are:
 
-```text
-%AppData%\SCOverlay
-```
+- **Profiles**: saved profile JSON files.
+- **Profile backups**: automatic backups of profile changes.
+- **Settings**: app-level settings.
+- **Settings backups**: automatic backups used for recovery.
+- **Logs**: local session logs.
+- **Diagnostics**: local diagnostics exports.
 
-Important folders/files:
+You normally do not need to touch these files directly. Use profile import/export from the app when you want to back up or share a profile.
 
-- `profiles`: saved profile JSON files.
-- `profile-backups`: automatic profile backups.
-- `settings.json`: app-level settings.
-- `settings-backups`: automatic settings backups.
-- `logs`: local log files.
-- `diagnostics`: local diagnostics exports.
+## Logs And Diagnostics
 
-The app folder can be replaced during updates. The `%AppData%\SCOverlay` folder is where your personal setup lives.
+If something crashes, fails to start, or behaves strangely:
 
-## Logs
+1. Open SC Overlay.
+2. Go to **Setup**.
+3. Click **Open Logs Folder** to inspect the latest log.
+4. Click **Export Diagnostics** to create a local diagnostic report.
 
-Logs are written to:
+The diagnostic export can include app settings summaries, active profile metadata, detected devices, raw input snapshots, evaluated overlay values, and recent log lines.
 
-```text
-%AppData%\SCOverlay\logs
-```
+Nothing is uploaded automatically.
 
-If something crashes, fails to start, or behaves strangely, include the latest log file when reporting the issue.
+## Optional Checksum File
 
-## Uninstall
+Some releases include a `.sha256` file next to the portable zip. This is an optional integrity check: it lets users confirm the zip they downloaded matches the zip that was published.
 
-SC Overlay is currently portable.
-
-To remove the app:
-
-1. Close SC Overlay.
-2. Delete the extracted app folder.
-
-To remove all user data too:
-
-1. Delete:
-
-   ```text
-   %AppData%\SCOverlay
-   ```
-
-This deletes profiles, settings, backups, and logs.
+Most users can ignore it. It is not a password, license key, or secret.
 
 ## Troubleshooting
 
@@ -376,79 +310,24 @@ Some HID devices report axes/buttons in surprising ways. Better calibration and 
 
 ### Windows Warns About The App
 
-The app is intentionally unsigned. Windows SmartScreen may warn you because this is a free/open-source portable build without a maintained code-signing certificate.
+The app is intentionally unsigned. Windows SmartScreen may warn you because this is a free portable build without a maintained code-signing certificate.
 
-## Building From Source
+### I Want To Fully Remove SC Overlay
 
-Requirements:
+SC Overlay is portable.
 
-- .NET 8 SDK.
-- Windows, because the app uses WPF and Windows input APIs.
+To remove the app:
 
-Build:
+1. Close SC Overlay.
+2. Delete the extracted app folder.
 
-```powershell
-.\scripts\build.ps1
-```
+To also remove profiles, settings, backups, diagnostics, and logs, delete the SC Overlay folder from your Windows AppData folder.
 
-Test:
+## Source Code And License
 
-```powershell
-.\scripts\test.ps1
-```
+The repository contains the full project history and source files. The portable release zip is intentionally smaller and only contains the files needed to run the app.
 
-Run from source:
-
-```powershell
-dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Release
-```
-
-Smoke test:
-
-```powershell
-dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Release -- --smoke-test
-```
-
-## Packaging
-
-Create a portable self-contained Windows zip:
-
-```powershell
-.\scripts\publish.ps1 -Version 1.0.0
-```
-
-Output:
-
-```text
-artifacts\release\SCOverlay-<version>-win-x64-self-contained.zip
-artifacts\release\SCOverlay-<version>-win-x64-self-contained.zip.sha256
-```
-
-The executable inside the zip is:
-
-```text
-SCOverlay.exe
-```
-
-The release zip is intentionally end-user focused. It contains the published runtime files needed to run the app, the required overlay assets, and `README-PORTABLE.txt`; source files, tests, scripts, and development docs stay in the repository.
-
-## Project Notes
-
-This is a new C#/.NET 8 WPF implementation. The older Python repo was used as a feature and behavior reference, not as code to keep carrying forward.
-
-Primary components:
-
-- `SCOverlay.App`: WPF desktop app and desktop overlay.
-- `SCOverlay.Core`: profile model, input evaluation, overlay state engine, settings, and logging.
-- `SCOverlay.Input`: Windows input providers.
-- `SCOverlay.BrowserSource`: local OBS browser source server and renderer.
-- `SCOverlay.Tests`: no-dependency console test runner.
-
-## License
-
-No license has been selected yet.
-
-Until a license is added, assume the code is private/all-rights-reserved and do not redistribute it unless the repository owner explicitly says otherwise.
+SC Overlay is released under the MIT License. See [LICENSE](LICENSE) for the full license text.
 
 ## Credits
 

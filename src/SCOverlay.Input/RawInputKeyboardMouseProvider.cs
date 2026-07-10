@@ -26,8 +26,8 @@ public sealed class RawInputKeyboardMouseProvider : IDisposable
     {
         return new[]
         {
-            new InputDeviceInfo("keyboard", "Keyboard", InputDeviceKind.Keyboard, 0, 256),
-            new InputDeviceInfo("mouse", "Mouse", InputDeviceKind.Mouse, 0, 5)
+            new InputDeviceInfo("keyboard", "Keyboard", InputDeviceKind.Keyboard, 0, 256, StableIdentity: "keyboard"),
+            new InputDeviceInfo("mouse", "Mouse", InputDeviceKind.Mouse, 0, 5, StableIdentity: "mouse")
         };
     }
 

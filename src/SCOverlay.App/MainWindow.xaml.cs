@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -44,6 +45,12 @@ public partial class MainWindow : Window
     private DesktopOverlayWindow? desktopOverlayWindow;
     private Forms.NotifyIcon? trayIcon;
     private OverlayState latestOverlayState;
+    private IReadOnlyList<InputDeviceInfo> latestDevices = Array.Empty<InputDeviceInfo>();
+    private InputSnapshot latestInputSnapshot = InputSnapshot.Empty();
+    private EvaluatedInputState latestEvaluatedInputState = new(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>());
     private bool isLoadingProfiles;
     private bool isRefreshingBindingUi;
     private bool isLoadingAppearance = true;
@@ -102,8 +109,15 @@ public partial class MainWindow : Window
         RefreshElementAppearanceUi();
         RefreshDesktopOverlayUi();
         InitializeTrayIcon();
-        FooterStatusText.Text = $"Runtime data: {paths.DataRoot}";
-        this.log.Info($"SC Overlay initialized with {inputProvider.Name}. Active profile: {profile.Id}. OBS URL: {browserSourceServer.Url}");
+        FooterStatusText.Text = settingsStore.LastRecoveryMessage is null
+            ? $"Runtime data: {paths.DataRoot}"
+            : $"{settingsStore.LastRecoveryMessage} Runtime data: {paths.DataRoot}";
+        if (settingsStore.LastRecoveryMessage is not null)
+        {
+            this.log.Info(settingsStore.LastRecoveryMessage);
+        }
+
+        this.log.WriteSessionHeader(paths, profile.Id, browserSourceServer.Url, inputProvider.Name);
 
         SourceInitialized += OnSourceInitialized;
         Closed += OnClosed;
@@ -265,6 +279,7 @@ public partial class MainWindow : Window
     private async Task RefreshDevicesAsync()
     {
         IReadOnlyList<InputDeviceInfo> devices = await inputProvider.EnumerateDevicesAsync();
+        latestDevices = devices;
         DevicesText.Text = string.Join(
             Environment.NewLine,
             devices.Select(FormatDevice));
@@ -305,6 +320,8 @@ public partial class MainWindow : Window
             InputSnapshot snapshot = inputProvider.Poll();
             EvaluatedInputState evaluated = InputSourceEvaluator.Evaluate(profile.InputSources, snapshot);
             OverlayState overlayState = stateEngine.BuildState(profile, snapshot);
+            latestInputSnapshot = snapshot;
+            latestEvaluatedInputState = evaluated;
             latestOverlayState = overlayState;
             browserSourceServer.UpdateState(overlayState);
             desktopOverlayWindow?.UpdateState(overlayState);
@@ -482,6 +499,16 @@ public partial class MainWindow : Window
             log.Error("Failed to refresh devices.", exception);
             FooterStatusText.Text = $"Could not refresh devices: {exception.Message}";
         }
+    }
+
+    private void OpenLogsFolderButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        OpenLogsFolder();
+    }
+
+    private async void ExportDiagnosticsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        await ExportDiagnosticsAsync();
     }
 
     private async void DesktopOverlayVisibleCheckBox_OnChanged(object sender, RoutedEventArgs e)
@@ -1212,6 +1239,8 @@ public partial class MainWindow : Window
             desktopOverlayWindow!.ResetPlacement();
             _ = ApplyDesktopOverlaySettingsAsync(desktopOverlayWindow.CaptureSettings(appSettings.DesktopOverlay.IsVisible));
         }));
+        menu.Items.Add("Open Logs Folder", null, (_, _) => Dispatcher.Invoke(OpenLogsFolder));
+        menu.Items.Add("Export Diagnostics", null, (_, _) => Dispatcher.Invoke(() => _ = ExportDiagnosticsAsync()));
         menu.Items.Add("-");
         menu.Items.Add("Exit", null, (_, _) => Dispatcher.Invoke(RequestAppShutdown));
 
@@ -1655,7 +1684,62 @@ public partial class MainWindow : Window
             ? string.Empty
             : $"  {device.Details}";
 
-        return $"{device.DeviceId}  {device.DisplayName}  {counts}{details}";
+        string identity = string.IsNullOrWhiteSpace(device.StableIdentity)
+            ? string.Empty
+            : $"  identity:{device.StableIdentity}";
+
+        return $"{device.DeviceId}  {device.DisplayName}  {counts}{details}{identity}";
+    }
+
+    private void OpenLogsFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(log.LogDirectory);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = log.LogDirectory,
+                UseShellExecute = true
+            });
+            FooterStatusText.Text = $"Opened logs folder: {log.LogDirectory}";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to open logs folder.", exception);
+            FooterStatusText.Text = $"Could not open logs folder: {exception.Message}";
+        }
+    }
+
+    private async Task ExportDiagnosticsAsync()
+    {
+        try
+        {
+            Directory.CreateDirectory(paths.DiagnosticsDirectory);
+            var report = new DiagnosticsReport(
+                GeneratedAt: DateTimeOffset.UtcNow,
+                AppName: AppInfo.ProductName,
+                AppVersion: AppInfo.Version,
+                DataRoot: paths.DataRoot,
+                ActiveProfileId: profile.Id,
+                ActiveProfileName: profile.Name,
+                ObsUrl: browserSourceServer.Url,
+                InputProvider: inputProvider.Name,
+                Settings: appSettings,
+                Devices: latestDevices,
+                RawSnapshot: latestInputSnapshot,
+                EvaluatedInput: latestEvaluatedInputState,
+                RecentLogLines: log.RecentLines(120));
+            string fileName = $"sc-overlay-diagnostics-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.json";
+            string path = Path.Combine(paths.DiagnosticsDirectory, fileName);
+            await File.WriteAllTextAsync(path, DiagnosticsReportWriter.CreateJson(report));
+            FooterStatusText.Text = $"Exported diagnostics: {path}";
+            log.Info($"Diagnostics exported to {path}.");
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to export diagnostics.", exception);
+            FooterStatusText.Text = $"Could not export diagnostics: {exception.Message}";
+        }
     }
 
     private static string FormatProfileValues(EvaluatedInputState evaluated)

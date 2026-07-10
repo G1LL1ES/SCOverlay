@@ -1,3 +1,5 @@
 # Known Issues
 
-- Desktop overlay resizing changes the window bounds but does not scale/reflow the HUD layout yet, so shrinking the window can crop widgets. Later desktop-overlay polish should make resize scale the rendered overlay or expose a separate layout scale control.
+- Some unusual HID devices may still need better reconnect behavior or manual calibration/deadzone tools.
+- The app is intentionally unsigned, so Windows SmartScreen may warn users on first run.
+- There is no installer yet; 1.0 distribution is an unsigned portable zip.

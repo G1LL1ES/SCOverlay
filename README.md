@@ -6,7 +6,7 @@ The goal is simple: bind the controls you actually fly with, customize how the H
 
 ## Current Status
 
-This is an early preview build for real-world testing. It is usable, but it is not polished like a signed commercial app yet.
+This is an early 1.0 candidate for real-world testing. It is usable, but it is not polished like a signed commercial app.
 
 Working today:
 
@@ -23,12 +23,12 @@ Working today:
 - Seeded roll images from the original SC Overlay reference project.
 - Boost and brake state text, including optional shake when fully engaged.
 - Live diagnostics for devices, raw input, and profile-evaluated values.
+- Local diagnostics export and an Open Logs Folder action for support.
 - Portable self-contained Windows release package.
-- Local logs under `%AppData%\SCOverlay\logs`.
+- Rotating session logs under `%AppData%\SCOverlay\logs`.
 
 Not done yet:
 
-- The desktop overlay resize handle changes the overlay window bounds, but it does not fully scale/reflow the rendered HUD yet. Shrinking the window can crop widgets.
 - The app is not code-signed, so Windows SmartScreen may complain.
 - There is no installer yet. The current release is a portable zip.
 - Some unusual HID devices may still need better diagnostics, reconnect handling, or calibration tools.
@@ -52,7 +52,7 @@ The normal portable build is self-contained. You should not need to install the 
 
 ## Installation
 
-1. Download the latest preview zip from the GitHub Releases page.
+1. Download the latest portable zip from the GitHub Releases page.
 2. Extract the zip to a normal folder, such as:
 
    ```text
@@ -153,7 +153,7 @@ To move or resize the overlay:
 4. Drag or resize the desktop overlay.
 5. Lock it again when placed.
 
-Known issue: resizing currently crops the HUD content instead of scaling the whole layout. Use the per-element scale and position controls for now.
+Resizing scales the rendered HUD to the overlay window. Use the per-element scale and position controls when you want to rearrange individual widgets instead of scaling the whole overlay.
 
 ## Profiles
 
@@ -279,6 +279,7 @@ It shows:
 
 - Detected input devices.
 - Device names and available counts where the app can discover them.
+- Stable diagnostic identities for devices where available.
 - Raw keyboard, mouse, joystick, and HID input snapshots.
 - Evaluated profile values, such as final strafe, look, throttle, roll, boost, and brake values.
 
@@ -287,6 +288,13 @@ Use diagnostics to answer these questions:
 - Does Windows expose the device to SC Overlay?
 - Does the raw input value change when I press or move the control?
 - Does the active profile convert that raw input into the overlay value I expected?
+
+The **Setup** tab also has support buttons:
+
+- **Open Logs Folder** opens `%AppData%\SCOverlay\logs`.
+- **Export Diagnostics** writes a local JSON report under `%AppData%\SCOverlay\diagnostics`.
+
+Diagnostics stay on your machine unless you choose to share the exported file.
 
 ## Files And Data
 
@@ -301,7 +309,9 @@ Important folders/files:
 - `profiles`: saved profile JSON files.
 - `profile-backups`: automatic profile backups.
 - `settings.json`: app-level settings.
+- `settings-backups`: automatic settings backups.
 - `logs`: local log files.
+- `diagnostics`: local diagnostics exports.
 
 The app folder can be replaced during updates. The `%AppData%\SCOverlay` folder is where your personal setup lives.
 
@@ -366,7 +376,7 @@ Some HID devices report axes/buttons in surprising ways. Better calibration and 
 
 ### Windows Warns About The App
 
-The app is not code-signed yet. Windows SmartScreen may warn you because this is an unsigned preview build.
+The app is intentionally unsigned. Windows SmartScreen may warn you because this is a free/open-source portable build without a maintained code-signing certificate.
 
 ## Building From Source
 
@@ -404,13 +414,14 @@ dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Re
 Create a portable self-contained Windows zip:
 
 ```powershell
-.\scripts\publish.ps1 -Version 0.1.1-preview
+.\scripts\publish.ps1 -Version 1.0.0
 ```
 
 Output:
 
 ```text
 artifacts\release\SCOverlay-<version>-win-x64-self-contained.zip
+artifacts\release\SCOverlay-<version>-win-x64-self-contained.zip.sha256
 ```
 
 The executable inside the zip is:
@@ -418,6 +429,8 @@ The executable inside the zip is:
 ```text
 SCOverlay.exe
 ```
+
+The release zip is intentionally end-user focused. It contains the published runtime files needed to run the app, the required overlay assets, and `README-PORTABLE.txt`; source files, tests, scripts, and development docs stay in the repository.
 
 ## Project Notes
 

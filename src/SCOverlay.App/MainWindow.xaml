@@ -158,6 +158,24 @@
                                        FontSize="12"
                                        Margin="0,8,0,0"
                                        TextWrapping="Wrap" />
+
+                            <TextBlock Text="Support"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Margin="0,24,0,0" />
+                            <WrapPanel Margin="0,12,0,0">
+                                <Button Content="Open Logs Folder"
+                                        MinWidth="126"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="OpenLogsFolderButton_OnClick" />
+                                <Button Content="Export Diagnostics"
+                                        MinWidth="132"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="ExportDiagnosticsButton_OnClick" />
+                            </WrapPanel>
                         </StackPanel>
                     </Border>
 

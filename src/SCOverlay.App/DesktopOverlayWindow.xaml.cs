@@ -19,6 +19,8 @@ namespace SCOverlay.App;
 
 public partial class DesktopOverlayWindow : Window
 {
+    private const double DesignWidth = 900;
+    private const double DesignHeight = 520;
     private const int GwlExStyle = -20;
     private const int WsExTransparent = 0x00000020;
     private const int WsExToolWindow = 0x00000080;
@@ -59,18 +61,19 @@ public partial class DesktopOverlayWindow : Window
 
     public void ApplySettings(DesktopOverlaySettings settings)
     {
-        Left = settings.Left;
-        Top = settings.Top;
-        Width = Math.Max(settings.Width, MinWidth > 0 ? MinWidth : 320);
-        Height = Math.Max(settings.Height, MinHeight > 0 ? MinHeight : 220);
-        IsLocked = settings.IsLocked;
-        IsClickThrough = settings.IsClickThrough;
+        DesktopOverlaySettings clamped = ClampToVisibleScreens(settings);
+        Left = clamped.Left;
+        Top = clamped.Top;
+        Width = clamped.Width;
+        Height = clamped.Height;
+        IsLocked = clamped.IsLocked;
+        IsClickThrough = clamped.IsClickThrough;
         RefreshEditorChrome();
     }
 
     public DesktopOverlaySettings CaptureSettings(bool isVisible)
     {
-        return new DesktopOverlaySettings
+        return ClampToVisibleScreens(new DesktopOverlaySettings
         {
             IsVisible = isVisible,
             IsLocked = IsLocked,
@@ -79,13 +82,13 @@ public partial class DesktopOverlayWindow : Window
             Top = Top,
             Width = Width,
             Height = Height
-        };
+        });
     }
 
     public void ResetPlacement()
     {
-        Width = 900;
-        Height = 520;
+        Width = DesignWidth;
+        Height = DesignHeight;
         Left = Math.Max(SystemParameters.WorkArea.Left + 80, 0);
         Top = Math.Max(SystemParameters.WorkArea.Top + 80, 0);
         Redraw();
@@ -164,8 +167,9 @@ public partial class DesktopOverlayWindow : Window
             return;
         }
 
-        double centerX = ActualWidth > 0 ? ActualWidth / 2.0 : Width / 2.0;
-        double centerY = ActualHeight > 0 ? ActualHeight / 2.0 : Height / 2.0;
+        ApplyCanvasScale();
+        double centerX = DesignWidth / 2.0;
+        double centerY = DesignHeight / 2.0;
         foreach (WidgetState widget in latestState.Widgets)
         {
             switch (widget)
@@ -184,6 +188,37 @@ public partial class DesktopOverlayWindow : Window
                     break;
             }
         }
+    }
+
+    private void ApplyCanvasScale()
+    {
+        double actualWidth = ActualWidth > 0 ? ActualWidth : Width;
+        double actualHeight = ActualHeight > 0 ? ActualHeight : Height;
+        double scale = Math.Max(Math.Min(actualWidth / DesignWidth, actualHeight / DesignHeight), 0.01);
+        double offsetX = Math.Max((actualWidth - (DesignWidth * scale)) / 2.0, 0.0);
+        double offsetY = Math.Max((actualHeight - (DesignHeight * scale)) / 2.0, 0.0);
+
+        OverlayCanvas.Width = DesignWidth;
+        OverlayCanvas.Height = DesignHeight;
+        OverlayCanvas.RenderTransform = new TransformGroup
+        {
+            Children = new TransformCollection
+            {
+                new ScaleTransform(scale, scale),
+                new TranslateTransform(offsetX, offsetY)
+            }
+        };
+    }
+
+    private static DesktopOverlaySettings ClampToVisibleScreens(DesktopOverlaySettings settings)
+    {
+        return DesktopOverlayPlacement.Clamp(
+            settings,
+            new DesktopOverlayBounds(
+                SystemParameters.VirtualScreenLeft,
+                SystemParameters.VirtualScreenTop,
+                SystemParameters.VirtualScreenWidth,
+                SystemParameters.VirtualScreenHeight));
     }
 
     private void DrawStick(StickWidgetState widget, double centerX, double centerY)

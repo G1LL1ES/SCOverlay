@@ -5,7 +5,9 @@ public sealed record AppPaths(
     string ProfilesDirectory,
     string LogsDirectory,
     string AssetsDirectory,
-    string ProfileBackupsDirectory);
+    string ProfileBackupsDirectory,
+    string SettingsBackupsDirectory,
+    string DiagnosticsDirectory);
 
 public static class AppPathProvider
 {
@@ -19,7 +21,9 @@ public static class AppPathProvider
             ProfilesDirectory: Path.Combine(dataRoot, "profiles"),
             LogsDirectory: Path.Combine(dataRoot, "logs"),
             AssetsDirectory: Path.Combine(dataRoot, "assets"),
-            ProfileBackupsDirectory: Path.Combine(dataRoot, "profile-backups"));
+            ProfileBackupsDirectory: Path.Combine(dataRoot, "profile-backups"),
+            SettingsBackupsDirectory: Path.Combine(dataRoot, "settings-backups"),
+            DiagnosticsDirectory: Path.Combine(dataRoot, "diagnostics"));
     }
 
     public static void EnsureCreated(AppPaths paths)
@@ -31,5 +35,7 @@ public static class AppPathProvider
         Directory.CreateDirectory(paths.LogsDirectory);
         Directory.CreateDirectory(paths.AssetsDirectory);
         Directory.CreateDirectory(paths.ProfileBackupsDirectory);
+        Directory.CreateDirectory(paths.SettingsBackupsDirectory);
+        Directory.CreateDirectory(paths.DiagnosticsDirectory);
     }
 }

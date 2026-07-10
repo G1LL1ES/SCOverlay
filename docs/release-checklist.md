@@ -10,17 +10,18 @@ Use this checklist for early friend/tester builds. The release is a portable Win
 
 Default output:
 
-- Published folder: `artifacts\publish\SCOverlay-0.1.0-preview-win-x64-self-contained`
-- Zip file: `artifacts\release\SCOverlay-0.1.0-preview-win-x64-self-contained.zip`
+- Published folder: `artifacts\publish\SCOverlay-1.0.0-win-x64-self-contained`
+- Zip file: `artifacts\release\SCOverlay-1.0.0-win-x64-self-contained.zip`
+- Checksum file: `artifacts\release\SCOverlay-1.0.0-win-x64-self-contained.zip.sha256`
 - Executable inside the zip: `SCOverlay.exe`
 
-The default build is self-contained for `win-x64`, so testers should not need to install the .NET runtime.
+The default build is self-contained for `win-x64`, so testers should not need to install the .NET runtime. The release zip is intentionally end-user focused: it contains the published runtime files, required overlay assets, and `README-PORTABLE.txt`, not source, tests, scripts, or development docs.
 
 ## Optional Arguments
 
 ```powershell
-.\scripts\publish.ps1 -Version 0.1.0-test1
-.\scripts\publish.ps1 -Runtime win-x64 -Version 0.1.0-test1
+.\scripts\publish.ps1 -Version 1.0.0-test1
+.\scripts\publish.ps1 -Runtime win-x64 -Version 1.0.0-test1
 .\scripts\publish.ps1 -FrameworkDependent
 .\scripts\publish.ps1 -SkipTests
 ```
@@ -45,4 +46,5 @@ Use `-SkipTests` only when build and test were already run for the exact changes
 - Logs are stored under `%AppData%\SCOverlay\logs`.
 - Profiles are stored under `%AppData%\SCOverlay\profiles`.
 - Profile backups are stored under `%AppData%\SCOverlay\profile-backups`.
-- The package is not code-signed yet, so Windows SmartScreen may warn testers.
+- The package is intentionally unsigned, so Windows SmartScreen may warn testers.
+- Verify the `.sha256` file before publishing or sharing a release.

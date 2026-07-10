@@ -93,7 +93,8 @@ public sealed class RawInputHidProvider : IDisposable
                 AxisCount: device.AxisItems.Count,
                 ButtonCount: device.ButtonItems.Count,
                 HatCount: device.HatItems.Count,
-                Details: $"Raw HID usage {device.UsagePage:X2}:{device.Usage:X2} VID:{device.VendorId:X4} PID:{device.ProductId:X4}"))
+                Details: $"Raw HID usage {device.UsagePage:X2}:{device.Usage:X2} VID:{device.VendorId:X4} PID:{device.ProductId:X4}",
+                StableIdentity: device.StableIdentity))
             .ToArray();
     }
 
@@ -247,10 +248,12 @@ public sealed class RawInputHidProvider : IDisposable
         IReadOnlyList<HidButtonItem> parsedButtons = GetButtonItems(preparsedData, caps);
         string deviceId = $"hid:vid_{hid.VendorId:X4}&pid_{hid.ProductId:X4}:{ordinal}";
         string displayName = CreateDisplayName(hid, rawName);
+        string stableIdentity = InputDeviceIdentity.CreateStableHidIdentity(hid.VendorId, hid.ProductId, displayName, rawName, ordinal);
 
         device = new RawHidDevice(
             DeviceId: deviceId,
             DisplayName: displayName,
+            StableIdentity: stableIdentity,
             VendorId: hid.VendorId,
             ProductId: hid.ProductId,
             UsagePage: hid.UsagePage,
@@ -383,6 +386,7 @@ public sealed class RawInputHidProvider : IDisposable
         return new RawHidDevice(
             DeviceId: $"hid:unknown:{ordinal}",
             DisplayName: $"Raw HID Device {ordinal}",
+            StableIdentity: InputDeviceIdentity.CreateStableHidIdentity(0, 0, $"Raw HID Device {ordinal}", string.Empty, ordinal),
             VendorId: 0,
             ProductId: 0,
             UsagePage: 0,
@@ -616,6 +620,7 @@ public sealed class RawInputHidProvider : IDisposable
     private sealed record RawHidDevice(
         string DeviceId,
         string DisplayName,
+        string StableIdentity,
         uint VendorId,
         uint ProductId,
         ushort UsagePage,

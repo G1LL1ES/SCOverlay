@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = "0.1.0-preview",
+    [string]$Version = "1.0.0",
     [switch]$FrameworkDependent,
     [switch]$SkipTests
 )
@@ -18,6 +18,7 @@ $packageKind = if ($FrameworkDependent.IsPresent) { "framework-dependent" } else
 $artifactName = "SCOverlay-$Version-$Runtime-$packageKind"
 $publishPath = Join-Path $publishRoot $artifactName
 $zipPath = Join-Path $releaseRoot "$artifactName.zip"
+$checksumPath = "$zipPath.sha256"
 
 function Assert-UnderRepo {
     param([string]$Path)
@@ -48,6 +49,10 @@ if (Test-Path $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
+if (Test-Path $checksumPath) {
+    Remove-Item -LiteralPath $checksumPath -Force
+}
+
 $selfContained = if ($FrameworkDependent.IsPresent) { "false" } else { "true" }
 
 dotnet publish $projectPath `
@@ -64,8 +69,16 @@ $runGuide = @"
 SC Overlay Portable Build
 =========================
 
+This folder contains only the files needed to run SC Overlay. Source code,
+tests, build scripts, and development documentation stay in the GitHub repo.
+
 Run:
   SCOverlay.exe
+
+Unsigned app notice:
+  This free/open-source build is not code-signed. Windows SmartScreen may warn
+  you until the app has enough local reputation. Choose "More info" and "Run
+  anyway" only if you trust where this zip came from.
 
 OBS browser source:
   Launch the app, then copy the OBS browser source URL shown in the top-right of the main window.
@@ -88,6 +101,10 @@ Set-Content -LiteralPath (Join-Path $publishPath "README-PORTABLE.txt") -Value $
 $publishItems = Get-ChildItem -LiteralPath $publishPath
 Compress-Archive -LiteralPath $publishItems.FullName -DestinationPath $zipPath -Force
 
+$hash = Get-FileHash -LiteralPath $zipPath -Algorithm SHA256
+Set-Content -LiteralPath $checksumPath -Value "$($hash.Hash.ToLowerInvariant())  $(Split-Path -Leaf $zipPath)" -Encoding ASCII
+
 Write-Host "Published portable build:"
 Write-Host "  Folder: $publishPath"
 Write-Host "  Zip:    $zipPath"
+Write-Host "  SHA256: $checksumPath"

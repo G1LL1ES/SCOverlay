@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SCOverlay.BrowserSource;
 using SCOverlay.Core.Application;
+using SCOverlay.Core.Diagnostics;
 using SCOverlay.Core.Domain;
 using SCOverlay.Core.Input;
 using SCOverlay.Core.Profiles;
@@ -16,6 +17,8 @@ runner.Test("App paths use SCOverlay app-data folder", () =>
     Assert.Equal("profiles", Path.GetFileName(paths.ProfilesDirectory));
     Assert.Equal("logs", Path.GetFileName(paths.LogsDirectory));
     Assert.Equal("profile-backups", Path.GetFileName(paths.ProfileBackupsDirectory));
+    Assert.Equal("settings-backups", Path.GetFileName(paths.SettingsBackupsDirectory));
+    Assert.Equal("diagnostics", Path.GetFileName(paths.DiagnosticsDirectory));
 });
 
 runner.Test("Default profiles are schema current and valid", () =>
@@ -107,7 +110,9 @@ runner.Test("File profile store saves, lists, loads, and validates", () =>
         ProfilesDirectory: Path.Combine(root, "profiles"),
         LogsDirectory: Path.Combine(root, "logs"),
         AssetsDirectory: Path.Combine(root, "assets"),
-        ProfileBackupsDirectory: Path.Combine(root, "profile-backups"));
+        ProfileBackupsDirectory: Path.Combine(root, "profile-backups"),
+        SettingsBackupsDirectory: Path.Combine(root, "settings-backups"),
+        DiagnosticsDirectory: Path.Combine(root, "diagnostics"));
     var store = new FileProfileStore(paths);
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
 
@@ -175,6 +180,121 @@ runner.Test("App settings store saves and loads active profile and desktop overl
     Assert.Equal(123, loaded.DesktopOverlay.Top);
     Assert.Equal(800, loaded.DesktopOverlay.Width);
     Assert.Equal(450, loaded.DesktopOverlay.Height);
+});
+
+runner.Test("App settings store recovers from corrupt settings with newest valid backup", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    AppPaths paths = TestPaths(root);
+    var store = new FileAppSettingsStore(paths);
+
+    store.SaveAsync(new AppSettings { ActiveProfileId = "first-profile" }).AsTask().GetAwaiter().GetResult();
+    store.SaveAsync(new AppSettings { ActiveProfileId = "second-profile" }).AsTask().GetAwaiter().GetResult();
+    File.WriteAllText(Path.Combine(root, "settings.json"), "{ bad json");
+
+    AppSettings loaded = store.LoadAsync().AsTask().GetAwaiter().GetResult();
+
+    Assert.Equal("first-profile", loaded.ActiveProfileId);
+    Assert.NotNull(store.LastRecoveryMessage);
+    Assert.True(Directory.GetFiles(paths.SettingsBackupsDirectory, "settings.*.invalid.json").Length == 1);
+});
+
+runner.Test("App settings store writes backups with bounded pruning", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    AppPaths paths = TestPaths(root);
+    var store = new FileAppSettingsStore(paths);
+
+    for (int index = 0; index < 13; index++)
+    {
+        store.SaveAsync(new AppSettings { ActiveProfileId = $"profile-{index}" }).AsTask().GetAwaiter().GetResult();
+    }
+
+    Assert.True(Directory.GetFiles(paths.SettingsBackupsDirectory, "settings.*.json").Length <= 10);
+    AppSettings loaded = store.LoadAsync().AsTask().GetAwaiter().GetResult();
+    Assert.Equal("profile-12", loaded.ActiveProfileId);
+});
+
+runner.Test("App log writes session headers, recent lines, and rotates session files", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    AppPaths paths = TestPaths(root);
+    Directory.CreateDirectory(paths.LogsDirectory);
+
+    for (int index = 0; index < 24; index++)
+    {
+        File.WriteAllText(Path.Combine(paths.LogsDirectory, $"sc-overlay-20000101-0000{index:D2}-1.log"), "old");
+        File.SetLastWriteTimeUtc(Path.Combine(paths.LogsDirectory, $"sc-overlay-20000101-0000{index:D2}-1.log"), DateTime.UtcNow.AddDays(-index - 1));
+    }
+
+    var log = new AppLog(paths);
+    log.WriteSessionHeader(paths, "kbm-default", "http://127.0.0.1:8765/obs.html", "Test Provider");
+    log.Info("line one");
+    log.Info("line two");
+
+    Assert.True(File.Exists(log.LogPath));
+    Assert.True(log.RecentLines(2).Any(line => line.Contains("line two", StringComparison.Ordinal)));
+    Assert.True(File.ReadAllText(log.LogPath).Contains("ActiveProfile=kbm-default", StringComparison.Ordinal));
+    Assert.True(Directory.GetFiles(paths.LogsDirectory, "sc-overlay-*.log").Length <= 20);
+});
+
+runner.Test("Diagnostics report serializes support fields", () =>
+{
+    var report = new DiagnosticsReport(
+        GeneratedAt: DateTimeOffset.UtcNow,
+        AppName: AppInfo.ProductName,
+        AppVersion: AppInfo.Version,
+        DataRoot: "C:\\DataRoot",
+        ActiveProfileId: "kbm-default",
+        ActiveProfileName: "Keyboard and Mouse Default",
+        ObsUrl: "http://127.0.0.1:8765/obs.html",
+        InputProvider: "Test Provider",
+        Settings: new AppSettings(),
+        Devices: new[]
+        {
+            new InputDeviceInfo("keyboard", "Keyboard", InputDeviceKind.Keyboard, 0, 256)
+        },
+        RawSnapshot: InputSnapshot.Empty(),
+        EvaluatedInput: new EvaluatedInputState(DateTimeOffset.UtcNow, new Dictionary<string, double>(), new Dictionary<string, bool>()),
+        RecentLogLines: new[] { "hello" });
+
+    string json = DiagnosticsReportWriter.CreateJson(report);
+
+    Assert.True(json.Contains("\"activeProfileId\": \"kbm-default\"", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"obsUrl\": \"http://127.0.0.1:8765/obs.html\"", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"deviceId\": \"keyboard\"", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"recentLogLines\"", StringComparison.Ordinal));
+});
+
+runner.Test("Desktop overlay placement clamps saved bounds to visible screens", () =>
+{
+    var settings = new DesktopOverlaySettings
+    {
+        Left = 5000,
+        Top = -2000,
+        Width = 2000,
+        Height = 100
+    };
+
+    DesktopOverlaySettings clamped = DesktopOverlayPlacement.Clamp(settings, new DesktopOverlayBounds(100, 50, 1280, 720));
+
+    Assert.Equal(1280, clamped.Width);
+    Assert.Equal(220, clamped.Height);
+    Assert.Equal(100, clamped.Left);
+    Assert.Equal(50, clamped.Top);
+});
+
+runner.Test("Input device identity formats stable HID and WinMM identities", () =>
+{
+    string first = InputDeviceIdentity.CreateStableHidIdentity(0x231D, 0x0125, "VKB Gladiator NXT", "\\\\?\\hid#vid_231d&pid_0125#abc", 0);
+    string second = InputDeviceIdentity.CreateStableHidIdentity(0x231D, 0x0125, "VKB Gladiator NXT", "\\\\?\\hid#vid_231d&pid_0125#abc", 1);
+    string fallback = InputDeviceIdentity.CreateStableHidIdentity(0x1234, 0xBEAD, "", string.Empty, 2);
+    string winMm = InputDeviceIdentity.CreateStableWinMmIdentity(3, "T.16000M FCS");
+
+    Assert.Equal(first, second);
+    Assert.True(first.StartsWith("hid:vid_231D&pid_0125:vkb_gladiator_nxt:", StringComparison.Ordinal));
+    Assert.Equal("hid:vid_1234&pid_BEAD:unknown:ordinal_2", fallback);
+    Assert.Equal("winmm:t_16000m_fcs:ordinal_3", winMm);
 });
 
 runner.Test("Profile bootstrapper materializes default profiles once", () =>
@@ -1410,7 +1530,9 @@ static AppPaths TestPaths(string root)
         ProfilesDirectory: Path.Combine(root, "profiles"),
         LogsDirectory: Path.Combine(root, "logs"),
         AssetsDirectory: Path.Combine(root, "assets"),
-        ProfileBackupsDirectory: Path.Combine(root, "profile-backups"));
+        ProfileBackupsDirectory: Path.Combine(root, "profile-backups"),
+        SettingsBackupsDirectory: Path.Combine(root, "settings-backups"),
+        DiagnosticsDirectory: Path.Combine(root, "diagnostics"));
 }
 
 static InputSnapshot AxisSnapshot(DateTimeOffset timestamp, double value)

@@ -27,7 +27,8 @@ public sealed class WinMmJoystickProvider
                 Kind: InputDeviceKind.Joystick,
                 AxisCount: CountAxes(caps),
                 ButtonCount: (int)caps.NumButtons,
-                Details: "Legacy WinMM"));
+                Details: "Legacy WinMM",
+                StableIdentity: InputDeviceIdentity.CreateStableWinMmIdentity(index, name)));
         }
 
         return devices;

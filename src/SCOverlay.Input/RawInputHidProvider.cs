@@ -246,12 +246,11 @@ public sealed class RawInputHidProvider : IDisposable
 
         IReadOnlyList<HidValueItem> values = GetValueItems(preparsedData, caps);
         IReadOnlyList<HidButtonItem> parsedButtons = GetButtonItems(preparsedData, caps);
-        string deviceId = $"hid:vid_{hid.VendorId:X4}&pid_{hid.ProductId:X4}:{ordinal}";
         string displayName = CreateDisplayName(hid, rawName);
         string stableIdentity = InputDeviceIdentity.CreateStableHidIdentity(hid.VendorId, hid.ProductId, displayName, rawName, ordinal);
 
         device = new RawHidDevice(
-            DeviceId: deviceId,
+            DeviceId: stableIdentity,
             DisplayName: displayName,
             StableIdentity: stableIdentity,
             VendorId: hid.VendorId,
@@ -384,7 +383,7 @@ public sealed class RawInputHidProvider : IDisposable
         }
 
         return new RawHidDevice(
-            DeviceId: $"hid:unknown:{ordinal}",
+            DeviceId: InputDeviceIdentity.CreateStableHidIdentity(0, 0, $"Raw HID Device {ordinal}", string.Empty, ordinal),
             DisplayName: $"Raw HID Device {ordinal}",
             StableIdentity: InputDeviceIdentity.CreateStableHidIdentity(0, 0, $"Raw HID Device {ordinal}", string.Empty, ordinal),
             VendorId: 0,

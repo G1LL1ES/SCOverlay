@@ -110,7 +110,8 @@ public static class InputSourceEvaluator
     private static double EvaluateJoystickAxis(JoystickAxisInputSource source, InputSnapshot snapshot)
     {
         string key = InputSnapshotKeys.JoystickAxis(source.DeviceId, source.AxisIndex);
-        if (!snapshot.Axes.TryGetValue(key, out double value))
+        if (!snapshot.Axes.TryGetValue(key, out double value) &&
+            !TryResolveCompatibleAxis(source, snapshot, out value))
         {
             return 0.0;
         }
@@ -122,8 +123,55 @@ public static class InputSourceEvaluator
     private static bool EvaluateJoystickButton(JoystickButtonInputSource source, InputSnapshot snapshot)
     {
         string key = InputSnapshotKeys.JoystickButton(source.DeviceId, source.ButtonIndex);
-        bool pressed = snapshot.Buttons.TryGetValue(key, out bool value) && value;
+        bool pressed = snapshot.Buttons.TryGetValue(key, out bool value)
+            ? value
+            : ResolveCompatibleButton(source, snapshot);
         return source.Invert ? !pressed : pressed;
+    }
+
+    private static bool TryResolveCompatibleAxis(
+        JoystickAxisInputSource source,
+        InputSnapshot snapshot,
+        out double value)
+    {
+        value = 0.0;
+        bool found = false;
+
+        foreach (KeyValuePair<string, double> pair in snapshot.Axes)
+        {
+            if (!InputSnapshotKeys.TryParseJoystickAxis(pair.Key, out string snapshotDeviceId, out int axisIndex) ||
+                axisIndex != source.AxisIndex ||
+                !InputSnapshotKeys.DeviceIdsMatch(source.DeviceId, snapshotDeviceId))
+            {
+                continue;
+            }
+
+            if (!found || Math.Abs(pair.Value) > Math.Abs(value))
+            {
+                value = pair.Value;
+                found = true;
+            }
+        }
+
+        return found;
+    }
+
+    private static bool ResolveCompatibleButton(JoystickButtonInputSource source, InputSnapshot snapshot)
+    {
+        foreach (KeyValuePair<string, bool> pair in snapshot.Buttons)
+        {
+            if (!pair.Value ||
+                !InputSnapshotKeys.TryParseJoystickButton(pair.Key, out string snapshotDeviceId, out int buttonIndex) ||
+                buttonIndex != source.ButtonIndex ||
+                !InputSnapshotKeys.DeviceIdsMatch(source.DeviceId, snapshotDeviceId))
+            {
+                continue;
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     private static double EvaluateVirtualButtonAxis(

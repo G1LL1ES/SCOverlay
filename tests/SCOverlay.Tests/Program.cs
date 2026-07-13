@@ -297,6 +297,16 @@ runner.Test("Input device identity formats stable HID and WinMM identities", () 
     Assert.Equal("winmm:t_16000m_fcs:ordinal_3", winMm);
 });
 
+runner.Test("Input snapshot keys match legacy HID ids to stable HID identities", () =>
+{
+    string legacy = "hid:vid_231D&pid_0125:3";
+    string stable = "hid:vid_231D&pid_0125:vkb_gladiator_nxt:91dd3bb0";
+
+    Assert.True(InputSnapshotKeys.DeviceIdsMatch(legacy, stable));
+    Assert.True(InputSnapshotKeys.DeviceIdsMatch(stable, legacy));
+    Assert.False(InputSnapshotKeys.DeviceIdsMatch("hid:vid_231D&pid_0125:3", "hid:vid_231D&pid_0126:vkb_gladiator_nxt:91dd3bb0"));
+});
+
 runner.Test("Profile bootstrapper materializes default profiles once", () =>
 {
     string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
@@ -963,6 +973,56 @@ runner.Test("Joystick axis sources apply scale and inversion", () =>
     EvaluatedInputState state = InputSourceEvaluator.Evaluate(sources, snapshot);
 
     Assert.Equal(-0.4, state.GetAxis("roll"));
+});
+
+runner.Test("Joystick axis sources resolve legacy HID device ids after restart", () =>
+{
+    var sources = new InputSource[]
+    {
+        new JoystickAxisInputSource
+        {
+            Id = "roll",
+            DisplayName = "Roll",
+            DeviceId = "hid:vid_231D&pid_0125:0",
+            AxisIndex = 2
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis("hid:vid_231D&pid_0125:vkb_gladiator_nxt:91dd3bb0", 2)] = 0.8
+        },
+        new Dictionary<string, bool>());
+
+    EvaluatedInputState state = InputSourceEvaluator.Evaluate(sources, snapshot);
+
+    Assert.Equal(0.8, state.GetAxis("roll"));
+});
+
+runner.Test("Joystick button sources resolve legacy HID device ids after restart", () =>
+{
+    var sources = new InputSource[]
+    {
+        new JoystickButtonInputSource
+        {
+            Id = "boost",
+            DisplayName = "Boost",
+            DeviceId = "hid:vid_231D&pid_0125:0",
+            ButtonIndex = 4
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>(),
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.JoystickButton("hid:vid_231D&pid_0125:vkb_gladiator_nxt:91dd3bb0", 4)] = true
+        });
+
+    EvaluatedInputState state = InputSourceEvaluator.Evaluate(sources, snapshot);
+
+    Assert.True(state.GetButton("boost"));
 });
 
 runner.Test("Composite axes combine axis and button components with clamping", () =>

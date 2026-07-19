@@ -297,6 +297,23 @@ runner.Test("Input device identity formats stable HID and WinMM identities", () 
     Assert.Equal("winmm:t_16000m_fcs:ordinal_3", winMm);
 });
 
+runner.Test("WinMM polling reuses cached capabilities", () =>
+{
+    var api = new FakeWinMmApi();
+    var provider = new WinMmJoystickProvider(api);
+
+    IReadOnlyList<InputDeviceInfo> devices = provider.EnumerateDevices();
+    for (int index = 0; index < 100; index++)
+    {
+        provider.Poll(DateTimeOffset.UtcNow);
+    }
+
+    Assert.Equal(1, devices.Count);
+    Assert.Equal(2, api.CapabilitiesCallCount);
+    Assert.Equal(101, api.ActiveDevicePositionCallCount);
+    Assert.Equal(0, api.InactiveDevicePositionCallCount);
+});
+
 runner.Test("Input snapshot keys match legacy HID ids to stable HID identities", () =>
 {
     string legacy = "hid:vid_231D&pid_0125:3";
@@ -1707,5 +1724,53 @@ internal sealed class FakeInputProvider : IInputProvider
     public ValueTask<InputCaptureResult> CaptureNextBindingAsync(CancellationToken cancellationToken = default)
     {
         throw new NotSupportedException();
+    }
+}
+
+internal sealed class FakeWinMmApi : WinMmJoystickProvider.IWinMmApi
+{
+    public int CapabilitiesCallCount { get; private set; }
+
+    public int ActiveDevicePositionCallCount { get; private set; }
+
+    public int InactiveDevicePositionCallCount { get; private set; }
+
+    public uint GetDeviceCount() => 2;
+
+    public bool TryGetCapabilities(uint index, out NativeMethods.JoyCaps capabilities)
+    {
+        CapabilitiesCallCount++;
+        capabilities = new NativeMethods.JoyCaps
+        {
+            ProductName = index == 0 ? "Test Joystick" : "Microsoft PC-joystick driver",
+            XMin = 0,
+            XMax = 65535,
+            YMin = 0,
+            YMax = 65535,
+            NumButtons = 4,
+            NumAxes = 2,
+            RegistryKey = string.Empty,
+            OemVxD = string.Empty
+        };
+        return true;
+    }
+
+    public bool TryGetPosition(uint index, out NativeMethods.JoyInfoEx position)
+    {
+        if (index == 0)
+        {
+            ActiveDevicePositionCallCount++;
+        }
+        else
+        {
+            InactiveDevicePositionCallCount++;
+        }
+
+        position = new NativeMethods.JoyInfoEx
+        {
+            XPosition = 32767,
+            YPosition = 32767
+        };
+        return true;
     }
 }

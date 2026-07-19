@@ -55,10 +55,13 @@ jobs:
       - name: Install pinned Inno Setup compiler
         id: inno
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $downloadPath = Join-Path $env:RUNNER_TEMP "innosetup-6.7.1.exe"
           $installPath = Join-Path $env:RUNNER_TEMP "Inno Setup 6"
-          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe" -OutFile $downloadPath
+          gh release download is-6_7_1 --repo jrsoftware/issrc --pattern "innosetup-6.7.1.exe" --dir $env:RUNNER_TEMP
+          gh release verify-asset $downloadPath --repo jrsoftware/issrc
           $expectedHash = "4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0"
           $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
           if ($actualHash -ne $expectedHash) {

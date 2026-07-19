@@ -15,6 +15,7 @@ $startMenuShortcut = Join-Path $programsPath "SC Overlay.lnk"
 $desktopShortcut = Join-Path $desktopPath "SC Overlay.lnk"
 $dataRoot = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ApplicationData)) "SCOverlay"
 $sentinelPath = Join-Path $dataRoot "installer-preservation-test.txt"
+$uninstallRegistryPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\{2E7E52E9-A0E7-4C4D-B082-D0A479CFA87E}_is1"
 
 function Invoke-CheckedProcess {
     param(
@@ -55,6 +56,27 @@ try {
     if (Test-Path -LiteralPath (Join-Path $installPath "README-PORTABLE.txt")) {
         throw "Portable-only notes were installed by the setup package."
     }
+    if (-not (Test-Path -LiteralPath $uninstallRegistryPath)) {
+        throw "Installer did not create the stable per-user uninstall identity."
+    }
+
+    $firstInstallLocation = (Get-ItemProperty -LiteralPath $uninstallRegistryPath).InstallLocation.TrimEnd('\')
+    if (-not [string]::Equals($firstInstallLocation, $installPath.TrimEnd('\'), [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Uninstall registration points to '$firstInstallLocation' instead of '$installPath'."
+    }
+
+    Invoke-CheckedProcess -FilePath $installer -ArgumentList @(
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/DIR=$installPath",
+        "/TASKS=startmenu"
+    )
+
+    $secondInstallLocation = (Get-ItemProperty -LiteralPath $uninstallRegistryPath).InstallLocation.TrimEnd('\')
+    if (-not [string]::Equals($secondInstallLocation, $firstInstallLocation, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Reinstall changed the registered installation directory."
+    }
 
     Invoke-CheckedProcess -FilePath "dotnet" -ArgumentList @(
         (Join-Path $installPath "SCOverlay.dll"),
@@ -74,6 +96,9 @@ try {
     }
     if (Test-Path -LiteralPath $startMenuShortcut) {
         throw "Uninstall left the Start Menu shortcut behind."
+    }
+    if (Test-Path -LiteralPath $uninstallRegistryPath) {
+        throw "Uninstall left the application registration behind."
     }
 
     Write-Host "Installer smoke test passed."

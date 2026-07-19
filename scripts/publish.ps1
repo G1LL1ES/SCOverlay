@@ -2,7 +2,7 @@
 param(
     [string]$Configuration = "Release",
     [string]$Runtime = "win-x64",
-    [string]$Version = "1.0.2",
+    [string]$Version,
     [switch]$FrameworkDependent,
     [switch]$SkipTests
 )
@@ -10,6 +10,20 @@ param(
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$versionPropsPath = Join-Path $repoRoot "Directory.Build.props"
+$versionProps = [xml](Get-Content -LiteralPath $versionPropsPath -Raw)
+$canonicalVersion = [string]$versionProps.Project.PropertyGroup.VersionPrefix
+if ([string]::IsNullOrWhiteSpace($canonicalVersion)) {
+    throw "Directory.Build.props does not define VersionPrefix."
+}
+
+if ([string]::IsNullOrWhiteSpace($Version)) {
+    $Version = $canonicalVersion
+}
+elseif (-not [string]::Equals($Version, $canonicalVersion, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Requested version '$Version' does not match canonical version '$canonicalVersion'."
+}
+
 $projectPath = Join-Path $repoRoot "src\SCOverlay.App\SCOverlay.App.csproj"
 $artifactsRoot = Join-Path $repoRoot "artifacts"
 $publishRoot = Join-Path $artifactsRoot "publish"
@@ -97,6 +111,27 @@ First-use smoke check:
 "@
 
 Set-Content -LiteralPath (Join-Path $publishPath "README-PORTABLE.txt") -Value $runGuide -Encoding UTF8
+Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $publishPath "LICENSE.txt") -Force
+
+$forbiddenFiles = Get-ChildItem -LiteralPath $publishPath -Recurse -File | Where-Object {
+    $_.Extension -in @(".pdb", ".cs", ".csproj", ".props", ".targets", ".ps1", ".sln", ".user")
+}
+if ($forbiddenFiles) {
+    $names = $forbiddenFiles.FullName -join [Environment]::NewLine
+    throw "Publish output contains development-only files:$([Environment]::NewLine)$names"
+}
+
+foreach ($requiredRelativePath in @("SCOverlay.exe", "SCOverlay.dll", "SCOverlay.deps.json", "SCOverlay.runtimeconfig.json", "LICENSE.txt", "Assets")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $publishPath $requiredRelativePath))) {
+        throw "Publish output is missing required item '$requiredRelativePath'."
+    }
+}
+
+$appHostPath = Join-Path $publishPath "SCOverlay.exe"
+$appHostText = [System.Text.Encoding]::UTF8.GetString([System.IO.File]::ReadAllBytes($appHostPath))
+if (-not $appHostText.Contains("requireAdministrator") -or -not $appHostText.Contains('uiAccess="false"')) {
+    throw "Published SCOverlay.exe does not contain the required elevation manifest."
+}
 
 $publishItems = Get-ChildItem -LiteralPath $publishPath
 Compress-Archive -LiteralPath $publishItems.FullName -DestinationPath $zipPath -Force

@@ -12,23 +12,23 @@ This backlog captures production-readiness work that should not block higher-imp
 
 ## Priority Order
 
-1. Validate 1.0 release artifacts from the curated portable zip.
+1. Validate installer upgrades, uninstall behavior, and elevation on clean Windows machines.
 2. Improve HID/device robustness with reconnect handling and calibration/deadzone diagnostics.
 3. Polish desktop overlay resilience across DPI and multi-monitor changes.
-4. Add optional installer support after the portable release path is proven.
+4. Keep installer and portable packaging automation reproducible as release tooling evolves.
 
 ## Release And Packaging
 
 - Keep the portable zip publish script producing a self-contained or framework-dependent release from a clean checkout.
+- Keep the per-user Inno Setup installer as the recommended distribution and build it on GitHub Actions.
 - Keep version metadata, app icon metadata, checksum output, and release artifact naming current.
 - Keep the clean-machine smoke checklist covering first launch, profile creation, OBS URL, desktop overlay, tray exit, and log creation.
-- Keep installer work optional until the portable release path is stable.
 
 ## CI And Quality Gates
 
 - Keep GitHub Actions on Windows for restore/build/test.
 - Keep build/test commands aligned with `scripts/build.ps1` and `scripts/test.ps1`.
-- Add publish verification only after the portable package script exists.
+- Keep portable and installer publish verification in the Windows packaging workflow.
 - Keep dependency additions documented in `docs/DEPENDENCIES.md`.
 
 ## Config Resilience
@@ -88,7 +88,7 @@ Before any hardening checkpoint commit, run:
 ```powershell
 .\scripts\build.ps1
 .\scripts\test.ps1
-dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Release -- --smoke-test
+.\scripts\smoke-test.ps1
 ```
 
 Add focused unit or integration tests for any hardening item that changes runtime behavior.

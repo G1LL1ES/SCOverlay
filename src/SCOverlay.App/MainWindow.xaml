@@ -13,7 +13,7 @@
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="14" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
@@ -45,7 +45,42 @@
                        TextWrapping="Wrap" />
         </Grid>
 
+        <Border Grid.Row="1"
+                x:Name="UpdateBanner"
+                Visibility="Collapsed"
+                Margin="0,12,0,0"
+                Padding="12,8"
+                Background="#1A2C24"
+                BorderBrush="#3B7D5A"
+                BorderThickness="1"
+                CornerRadius="4">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="UpdateBannerText"
+                           Foreground="#D7F2E3"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap" />
+                <Button Grid.Column="1"
+                        Content="View Release"
+                        Height="28"
+                        MinWidth="98"
+                        Margin="16,0,8,0"
+                        Click="ViewReleaseButton_OnClick" />
+                <Button Grid.Column="2"
+                        Content="X"
+                        Height="28"
+                        Width="30"
+                        ToolTip="Dismiss this update"
+                        Click="DismissUpdateButton_OnClick" />
+            </Grid>
+        </Border>
+
         <TabControl Grid.Row="2"
+                    Margin="0,14,0,0"
                     Background="#161D24"
                     BorderBrush="#2A3440"
                     Foreground="#F2F6FA">
@@ -176,6 +211,26 @@
                                         Margin="0,0,8,8"
                                         Click="ExportDiagnosticsButton_OnClick" />
                             </WrapPanel>
+                            <WrapPanel Margin="0,4,0,0">
+                                <CheckBox x:Name="AutomaticUpdateChecksCheckBox"
+                                          Content="Check automatically"
+                                          Foreground="#D5E1EA"
+                                          VerticalAlignment="Center"
+                                          Margin="0,0,16,8"
+                                          Checked="AutomaticUpdateChecksCheckBox_OnChanged"
+                                          Unchecked="AutomaticUpdateChecksCheckBox_OnChanged" />
+                                <Button x:Name="CheckForUpdatesButton"
+                                        Content="Check for Updates"
+                                        MinWidth="128"
+                                        Height="30"
+                                        Margin="0,0,8,8"
+                                        Click="CheckForUpdatesButton_OnClick" />
+                            </WrapPanel>
+                            <TextBlock x:Name="UpdateStatusText"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,4,0,0"
+                                       TextWrapping="Wrap" />
                         </StackPanel>
                     </Border>
 

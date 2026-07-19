@@ -1,0 +1,111 @@
+name: Windows Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build installer and portable release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Read and validate version
+        id: version
+        shell: pwsh
+        run: |
+          $props = [xml](Get-Content -LiteralPath .\Directory.Build.props -Raw)
+          $version = [string]$props.Project.PropertyGroup.VersionPrefix
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Directory.Build.props does not define VersionPrefix."
+          }
+          if ($env:GITHUB_REF_TYPE -eq "tag" -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag '$env:GITHUB_REF_NAME' does not match canonical version 'v$version'."
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Build
+        shell: pwsh
+        run: .\scripts\build.ps1
+
+      - name: Test
+        shell: pwsh
+        run: .\scripts\test.ps1
+
+      - name: Smoke test
+        shell: pwsh
+        run: .\scripts\smoke-test.ps1
+
+      - name: Install pinned Inno Setup compiler
+        id: inno
+        shell: pwsh
+        run: |
+          $downloadPath = Join-Path $env:RUNNER_TEMP "innosetup-6.7.1.exe"
+          $installPath = Join-Path $env:RUNNER_TEMP "Inno Setup 6"
+          Invoke-WebRequest -Uri "https://files.jrsoftware.org/is/6/innosetup-6.7.1.exe" -OutFile $downloadPath
+          $expectedHash = "4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0"
+          $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "Inno Setup download hash mismatch. Expected $expectedHash, got $actualHash."
+          }
+          $process = Start-Process -FilePath $downloadPath -ArgumentList @(
+            "/VERYSILENT",
+            "/SUPPRESSMSGBOXES",
+            "/NORESTART",
+            "/SP-",
+            "/DIR=$installPath"
+          ) -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Inno Setup installation failed with exit code $($process.ExitCode)."
+          }
+          $iscc = Join-Path $installPath "ISCC.exe"
+          if (-not (Test-Path -LiteralPath $iscc)) {
+            throw "ISCC.exe was not installed."
+          }
+          "iscc=$iscc" >> $env:GITHUB_OUTPUT
+
+      - name: Publish installer and portable zip
+        shell: pwsh
+        run: .\scripts\publish-installer.ps1 -SkipTests -IsccPath "${{ steps.inno.outputs.iscc }}"
+
+      - name: Test installed package
+        shell: pwsh
+        run: .\scripts\test-installer.ps1 -InstallerPath ".\artifacts\release\SCOverlay-${{ steps.version.outputs.version }}-win-x64-setup.exe"
+
+      - name: Upload package candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: SCOverlay-${{ steps.version.outputs.version }}-windows
+          if-no-files-found: error
+          path: |
+            artifacts/release/SCOverlay-${{ steps.version.outputs.version }}-win-x64-setup.exe
+            artifacts/release/SCOverlay-${{ steps.version.outputs.version }}-win-x64-setup.exe.sha256
+            artifacts/release/SCOverlay-${{ steps.version.outputs.version }}-win-x64-self-contained.zip
+            artifacts/release/SCOverlay-${{ steps.version.outputs.version }}-win-x64-self-contained.zip.sha256
+
+      - name: Publish tagged GitHub release
+        if: github.ref_type == 'tag'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $assets = @(
+            ".\artifacts\release\SCOverlay-${{ steps.version.outputs.version }}-win-x64-setup.exe",
+            ".\artifacts\release\SCOverlay-${{ steps.version.outputs.version }}-win-x64-setup.exe.sha256",
+            ".\artifacts\release\SCOverlay-${{ steps.version.outputs.version }}-win-x64-self-contained.zip",
+            ".\artifacts\release\SCOverlay-${{ steps.version.outputs.version }}-win-x64-self-contained.zip.sha256"
+          )
+          gh release create $env:GITHUB_REF_NAME $assets --verify-tag --generate-notes --title "SC Overlay $env:GITHUB_REF_NAME"

@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Windows;
@@ -31,6 +32,8 @@ public partial class MainWindow : Window
     private readonly FileAppSettingsStore settingsStore;
     private readonly WindowsInputProvider inputProvider;
     private readonly OverlayStateEngine stateEngine;
+    private readonly GitHubReleaseUpdateService releaseUpdateService;
+    private readonly CancellationTokenSource updateCheckCancellation = new();
     private readonly DispatcherTimer inputTimer;
     private readonly JsonSerializerOptions profileJsonOptions;
     private readonly ObservableCollection<ProfileSelectionItem> profileItems = new();
@@ -59,6 +62,9 @@ public partial class MainWindow : Window
     private bool isClosing;
     private CancellationTokenSource? captureCancellation;
     private int captureSessionId;
+    private bool isLoadingUpdateUi = true;
+    private Uri? availableReleaseUri;
+    private string? availableReleaseVersion;
 
     public MainWindow(AppPaths paths, AppLog log)
     {
@@ -76,6 +82,7 @@ public partial class MainWindow : Window
         latestOverlayState = OverlayState.Empty(profile.Id);
         inputProvider = new WindowsInputProvider();
         stateEngine = new OverlayStateEngine();
+        releaseUpdateService = new GitHubReleaseUpdateService();
         browserSourceServer = new BrowserSourceServer(profile.Runtime, OverlayState.Empty(profile.Id));
         inputTimer = new DispatcherTimer
         {
@@ -84,6 +91,9 @@ public partial class MainWindow : Window
         inputTimer.Tick += OnInputTimerTick;
 
         InitializeComponent();
+
+        AutomaticUpdateChecksCheckBox.IsChecked = appSettings.AutomaticUpdateChecksEnabled;
+        isLoadingUpdateUi = false;
 
         ProfileComboBox.ItemsSource = profileItems;
         BindingSourceComboBox.ItemsSource = bindableSourceItems;
@@ -161,6 +171,153 @@ public partial class MainWindow : Window
         RefreshBindingUi();
         ProfileStatusText.Text = $"Active: {profile.Name}";
         ShowDesktopOverlayFromSettings();
+        if (ReleaseUpdatePolicy.ShouldCheckAutomatically(appSettings, DateTimeOffset.UtcNow))
+        {
+            await CheckForUpdatesAsync(isManual: false);
+        }
+    }
+
+    private async void CheckForUpdatesButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        await CheckForUpdatesAsync(isManual: true);
+    }
+
+    private async void AutomaticUpdateChecksCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isLoadingUpdateUi)
+        {
+            return;
+        }
+
+        appSettings = appSettings with
+        {
+            AutomaticUpdateChecksEnabled = AutomaticUpdateChecksCheckBox.IsChecked == true
+        };
+
+        try
+        {
+            await settingsStore.SaveAsync(appSettings);
+            UpdateStatusText.Text = appSettings.AutomaticUpdateChecksEnabled
+                ? "Automatic update checks are enabled."
+                : "Automatic update checks are disabled.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to save the automatic update preference.", exception);
+            UpdateStatusText.Text = $"Could not save the update preference: {exception.Message}";
+        }
+    }
+
+    private void ViewReleaseButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (availableReleaseUri is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = availableReleaseUri.AbsoluteUri,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to open the SC Overlay release page.", exception);
+            FooterStatusText.Text = $"Could not open the release page: {exception.Message}";
+        }
+    }
+
+    private async void DismissUpdateButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        UpdateBanner.Visibility = Visibility.Collapsed;
+        if (availableReleaseVersion is null)
+        {
+            return;
+        }
+
+        appSettings = appSettings with
+        {
+            DismissedUpdateVersion = availableReleaseVersion
+        };
+        try
+        {
+            await settingsStore.SaveAsync(appSettings);
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to save the dismissed update version.", exception);
+        }
+    }
+
+    private async Task CheckForUpdatesAsync(bool isManual)
+    {
+        CheckForUpdatesButton.IsEnabled = false;
+        if (isManual)
+        {
+            UpdateStatusText.Text = "Checking for updates...";
+        }
+
+        try
+        {
+            ReleaseUpdateInfo update = await releaseUpdateService.CheckAsync(
+                AppInfo.Version,
+                updateCheckCancellation.Token);
+            appSettings = appSettings with
+            {
+                LastUpdateCheckUtc = DateTimeOffset.UtcNow,
+                DismissedUpdateVersion = isManual && update.IsUpdateAvailable
+                    ? null
+                    : appSettings.DismissedUpdateVersion
+            };
+            await settingsStore.SaveAsync(appSettings, updateCheckCancellation.Token);
+
+            if (update.IsUpdateAvailable)
+            {
+                availableReleaseUri = update.ReleaseUri;
+                availableReleaseVersion = update.LatestVersion;
+                if (isManual || !string.Equals(
+                    appSettings.DismissedUpdateVersion,
+                    update.LatestVersion,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    UpdateBannerText.Text = $"SC Overlay {update.LatestVersion} is available.";
+                    UpdateBanner.Visibility = Visibility.Visible;
+                }
+
+                UpdateStatusText.Text = $"Version {update.LatestVersion} is available.";
+                log.Info($"Update check found SC Overlay {update.LatestVersion}.");
+            }
+            else
+            {
+                UpdateStatusText.Text = $"SC Overlay {update.CurrentVersion} is up to date.";
+                if (isManual)
+                {
+                    UpdateBanner.Visibility = Visibility.Collapsed;
+                }
+                log.Info($"Update check completed; SC Overlay {update.CurrentVersion} is current.");
+            }
+        }
+        catch (OperationCanceledException) when (updateCheckCancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception) when (exception is HttpRequestException or JsonException or InvalidDataException or FormatException or TaskCanceledException)
+        {
+            log.Info($"Update check could not complete: {exception.Message}");
+            if (isManual)
+            {
+                UpdateStatusText.Text = $"Could not check for updates: {exception.Message}";
+            }
+        }
+        finally
+        {
+            if (!isClosing)
+            {
+                CheckForUpdatesButton.IsEnabled = true;
+            }
+        }
     }
 
     private async void OnSourceInitialized(object? sender, EventArgs e)
@@ -1553,6 +1710,7 @@ public partial class MainWindow : Window
         Interlocked.Increment(ref captureSessionId);
         inputTimer.Stop();
         captureCancellation?.Cancel();
+        updateCheckCancellation.Cancel();
         if (desktopOverlayWindow is not null)
         {
             appSettings = appSettings with
@@ -1582,6 +1740,8 @@ public partial class MainWindow : Window
 
         browserSourceServer.Dispose();
         inputProvider.Dispose();
+        releaseUpdateService.Dispose();
+        updateCheckCancellation.Dispose();
         captureCancellation?.Dispose();
         if (System.Windows.Application.Current is App app)
         {

@@ -32,4 +32,4 @@ jobs:
 
       - name: Smoke test
         shell: pwsh
-        run: dotnet run --project .\src\SCOverlay.App\SCOverlay.App.csproj --configuration Release -- --smoke-test
+        run: .\scripts\smoke-test.ps1

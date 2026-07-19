@@ -41,15 +41,19 @@ if ([string]::IsNullOrWhiteSpace($IsccPath) -or -not (Test-Path -LiteralPath $Is
     throw "Inno Setup compiler was not found. Pass -IsccPath or run this script in the GitHub packaging workflow."
 }
 
-$publishArguments = @(
-    "-Configuration", $Configuration,
-    "-Runtime", $Runtime,
-    "-Version", $Version
-)
 if ($SkipTests.IsPresent) {
-    $publishArguments += "-SkipTests"
+    & (Join-Path $PSScriptRoot "publish.ps1") `
+        -Configuration $Configuration `
+        -Runtime $Runtime `
+        -Version $Version `
+        -SkipTests
 }
-& (Join-Path $PSScriptRoot "publish.ps1") @publishArguments
+else {
+    & (Join-Path $PSScriptRoot "publish.ps1") `
+        -Configuration $Configuration `
+        -Runtime $Runtime `
+        -Version $Version
+}
 if ($LASTEXITCODE -ne 0) {
     throw "Portable publishing failed with exit code $LASTEXITCODE."
 }

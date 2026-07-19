@@ -61,7 +61,9 @@ jobs:
           $downloadPath = Join-Path $env:RUNNER_TEMP "innosetup-6.7.1.exe"
           $installPath = Join-Path $env:RUNNER_TEMP "Inno Setup 6"
           gh release download is-6_7_1 --repo jrsoftware/issrc --pattern "innosetup-6.7.1.exe" --dir $env:RUNNER_TEMP
-          gh release verify-asset $downloadPath --repo jrsoftware/issrc
+          if ($LASTEXITCODE -ne 0) {
+            throw "Could not download the pinned Inno Setup release asset."
+          }
           $expectedHash = "4D11E8050B6185E0D49BD9E8CC661A7A59F44959A621D31D11033124C4E8A7B0"
           $actualHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256).Hash
           if ($actualHash -ne $expectedHash) {
@@ -72,7 +74,7 @@ jobs:
             "/SUPPRESSMSGBOXES",
             "/NORESTART",
             "/SP-",
-            "/DIR=$installPath"
+            "/DIR=`"$installPath`""
           ) -Wait -PassThru
           if ($process.ExitCode -ne 0) {
             throw "Inno Setup installation failed with exit code $($process.ExitCode)."

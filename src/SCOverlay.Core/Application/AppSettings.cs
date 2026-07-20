@@ -5,6 +5,12 @@ public sealed record AppSettings
     public string ActiveProfileId { get; init; } = "kbm-default";
 
     public DesktopOverlaySettings DesktopOverlay { get; init; } = new();
+
+    public bool AutomaticUpdateChecksEnabled { get; init; } = true;
+
+    public DateTimeOffset? LastUpdateCheckUtc { get; init; }
+
+    public string? DismissedUpdateVersion { get; init; }
 }
 
 public sealed record DesktopOverlaySettings

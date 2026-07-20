@@ -2,7 +2,7 @@
 
 SC Overlay is a Windows overlay for showing Star Citizen flight inputs in OBS or directly on your desktop. It supports keyboard, mouse buttons, joystick, HOTAS, HOSAS, and mixed-device setups, so you can bind the controls you actually fly with instead of forcing everything into one device type.
 
-The app is built for normal use: install the portable release, bind your controls, customize the HUD, copy the OBS URL if you stream, and fly. You should not need to edit Python files, hand-write JSON, install the .NET runtime, or do weird dev-machine nonsense just to make the overlay work.
+The app is built for normal use: run the installer, launch it from the Start Menu, bind your controls, customize the HUD, copy the OBS URL if you stream, and fly. You should not need to edit Python files, hand-write JSON, install the .NET runtime, or do weird dev-machine nonsense just to make the overlay work.
 
 ## Blunt Disclaimer
 
@@ -35,28 +35,37 @@ SC Overlay is unofficial and is not affiliated with, endorsed by, or supported b
 - Star Citizen if you want to use it in-game.
 - OBS Studio if you want the browser source overlay.
 
-The normal portable release is self-contained. You should not need to install the .NET runtime.
+The installer and portable release are self-contained. You should not need to install the .NET runtime.
 
 ## Download And Install
 
-1. Download the latest portable zip from the [GitHub Releases page](https://github.com/G1LL1ES/SCOverlay/releases).
-2. Extract the zip to a normal folder, such as your Desktop, Documents folder, or an Apps folder.
-3. Open the extracted folder.
-4. Run `SCOverlay.exe`.
-5. If Windows SmartScreen warns you, choose **More info** and then **Run anyway** if you trust the release.
+1. Download `SCOverlay-<version>-win-x64-setup.exe` from the [GitHub Releases page](https://github.com/G1LL1ES/SCOverlay/releases).
+2. Run the installer.
+3. Leave **Create a Start Menu shortcut** selected unless you specifically do not want one.
+4. Optionally select the desktop shortcut.
+5. Launch SC Overlay from the Start Menu or the final installer page.
 
-Do not run the app directly from inside the zip. Extract it first.
+SC Overlay is intentionally unsigned. Windows SmartScreen may warn you because this free/open-source project does not maintain a code-signing certificate. Choose **More info** and then **Run anyway** only if you trust the release you downloaded.
 
-SC Overlay is intentionally unsigned. Windows may warn you because this is a free portable build without a maintained code-signing certificate.
+SC Overlay also requests administrator access each time it starts. This produces a separate Windows UAC prompt showing an unknown publisher. Elevation is required for reliable input capture when Star Citizen is also running as administrator.
+
+### Portable Alternative
+
+The self-contained portable zip remains available for users who do not want an installed application:
+
+1. Download `SCOverlay-<version>-win-x64-self-contained.zip`.
+2. Extract the entire zip to a normal folder.
+3. Run `SCOverlay.exe` from the extracted folder.
+
+Do not run the app directly from inside the zip. The portable executable requests the same administrator access as the installed version.
 
 ## Updating
 
-1. Close SC Overlay.
-2. Download the newer portable zip.
-3. Extract it over the old app folder, or extract it to a fresh folder.
-4. Run `SCOverlay.exe`.
+SC Overlay checks the public GitHub release feed in the background at most once per day. When a newer stable release exists, the app shows a non-blocking banner with a link to its release page. You can disable automatic checks or run a manual check from **Setup**.
 
-Your profiles and settings live outside the app folder, so replacing the app files should not delete your setup.
+To update, close SC Overlay, download the newer installer, and run it. The installer recognizes the existing installation and replaces it in the same stable location, so Start Menu and desktop shortcuts do not need to be recreated or remapped.
+
+Profiles and settings live outside the installation directory and remain in place through upgrades.
 
 ## First Launch
 
@@ -86,6 +95,9 @@ Useful buttons:
 - **Export Profile** saves the current profile as a JSON file you can back up or share.
 - **Open Logs Folder** opens the local log folder.
 - **Export Diagnostics** creates a local diagnostic report you can inspect or share when troubleshooting.
+- **Check for Updates** checks the latest stable GitHub release without downloading or installing anything.
+
+The **Check automatically** option is enabled by default. Update checks are local requests to GitHub; no profiles, bindings, diagnostics, or telemetry are uploaded.
 
 ## Bindings Tab
 
@@ -236,15 +248,9 @@ Resizing scales the rendered HUD to the overlay window. Use the per-element scal
 
 ## Running With Star Citizen Focused
 
-If SC Overlay works on the desktop but stops updating while Star Citizen is focused, run SC Overlay as administrator.
+SC Overlay requests administrator access automatically every time it launches. This allows it to observe inputs while an elevated Star Citizen process is focused.
 
-This happens because Windows blocks lower-privilege apps from observing input while a higher-privilege app is focused. If Star Citizen is running elevated, SC Overlay needs to be elevated too.
-
-To run the portable app as administrator:
-
-1. Close SC Overlay.
-2. Right-click `SCOverlay.exe`.
-3. Choose **Run as administrator**.
+If you decline the UAC prompt, SC Overlay will not start. If focused input still fails after approving elevation, confirm in Task Manager that both Star Citizen and SC Overlay are running under the same Windows user and include a diagnostics export with any bug report.
 
 ## Files And Data
 
@@ -282,7 +288,7 @@ Most users can ignore it. It is not a password, license key, or secret.
 
 ### Inputs Work Until Star Citizen Is Focused
 
-Run SC Overlay as administrator. See [Running With Star Citizen Focused](#running-with-star-citizen-focused).
+Approve the UAC prompt when SC Overlay starts. See [Running With Star Citizen Focused](#running-with-star-citizen-focused).
 
 ### OBS Shows Nothing Or Stops Updating
 
@@ -314,18 +320,15 @@ The app is intentionally unsigned. Windows SmartScreen may warn you because this
 
 ### I Want To Fully Remove SC Overlay
 
-SC Overlay is portable.
+For an installed copy, open Windows **Installed apps**, find **SC Overlay**, and choose **Uninstall**. You can also rerun the installer to repair or update the application.
 
-To remove the app:
+Uninstall deliberately preserves profiles, settings, backups, diagnostics, and logs. Delete the SC Overlay folder from your Windows AppData folder only when you also want to erase that user data.
 
-1. Close SC Overlay.
-2. Delete the extracted app folder.
-
-To also remove profiles, settings, backups, diagnostics, and logs, delete the SC Overlay folder from your Windows AppData folder.
+For a portable copy, close SC Overlay and delete its extracted application folder. Portable and installed copies use the same AppData location.
 
 ## Source Code And License
 
-The repository contains the full project history and source files. The portable release zip is intentionally smaller and only contains the files needed to run the app.
+The repository contains the full project history and source files. Installer and portable release artifacts contain only the application files, required runtime dependencies, overlay assets, and license needed by end users.
 
 SC Overlay is released under the MIT License. See [LICENSE](LICENSE) for the full license text.
 

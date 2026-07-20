@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Net;
 using SCOverlay.BrowserSource;
 using SCOverlay.Core.Application;
 using SCOverlay.Core.Diagnostics;
@@ -157,6 +158,9 @@ runner.Test("App settings store saves and loads active profile and desktop overl
     var settings = new AppSettings
     {
         ActiveProfileId = "custom-profile",
+        AutomaticUpdateChecksEnabled = false,
+        LastUpdateCheckUtc = new DateTimeOffset(2026, 7, 19, 12, 0, 0, TimeSpan.Zero),
+        DismissedUpdateVersion = "1.2.0",
         DesktopOverlay = new DesktopOverlaySettings
         {
             IsVisible = true,
@@ -180,6 +184,78 @@ runner.Test("App settings store saves and loads active profile and desktop overl
     Assert.Equal(123, loaded.DesktopOverlay.Top);
     Assert.Equal(800, loaded.DesktopOverlay.Width);
     Assert.Equal(450, loaded.DesktopOverlay.Height);
+    Assert.False(loaded.AutomaticUpdateChecksEnabled);
+    Assert.Equal(settings.LastUpdateCheckUtc, loaded.LastUpdateCheckUtc);
+    Assert.Equal("1.2.0", loaded.DismissedUpdateVersion);
+});
+
+runner.Test("Release versions normalize stable tags and reject prereleases", () =>
+{
+    Assert.True(ReleaseVersion.TryParse("v1.2.3", out Version stable));
+    Assert.Equal(new Version(1, 2, 3), stable);
+    Assert.True(ReleaseVersion.TryParse("1.2.3+build.5", out Version buildMetadata));
+    Assert.Equal(new Version(1, 2, 3), buildMetadata);
+    Assert.False(ReleaseVersion.TryParse("v1.2.3-beta.1", out _));
+    Assert.False(ReleaseVersion.TryParse("1.2", out _));
+    Assert.False(ReleaseVersion.TryParse("nonsense", out _));
+    Assert.Equal("1.2.3", ReleaseVersion.Normalize("v1.2.3"));
+});
+
+runner.Test("Automatic update policy checks at most once per day", () =>
+{
+    DateTimeOffset now = new(2026, 7, 19, 12, 0, 0, TimeSpan.Zero);
+    Assert.True(ReleaseUpdatePolicy.ShouldCheckAutomatically(new AppSettings(), now));
+    Assert.False(ReleaseUpdatePolicy.ShouldCheckAutomatically(
+        new AppSettings { AutomaticUpdateChecksEnabled = false },
+        now));
+    Assert.False(ReleaseUpdatePolicy.ShouldCheckAutomatically(
+        new AppSettings { LastUpdateCheckUtc = now.AddHours(-23) },
+        now));
+    Assert.True(ReleaseUpdatePolicy.ShouldCheckAutomatically(
+        new AppSettings { LastUpdateCheckUtc = now.AddHours(-24) },
+        now));
+});
+
+runner.Test("GitHub update service reports newer, equal, and older releases", () =>
+{
+    ReleaseUpdateInfo newer = CheckRelease("v1.2.0", "1.1.0");
+    Assert.True(newer.IsUpdateAvailable);
+    Assert.Equal("1.2.0", newer.LatestVersion);
+    Assert.Equal("https://github.com/G1LL1ES/SCOverlay/releases/tag/v1.2.0", newer.ReleaseUri.AbsoluteUri);
+
+    Assert.False(CheckRelease("v1.1.0", "1.1.0").IsUpdateAvailable);
+    Assert.False(CheckRelease("v1.0.2", "1.1.0").IsUpdateAvailable);
+});
+
+runner.Test("GitHub update service rejects malformed and prerelease responses", () =>
+{
+    using var malformed = new GitHubReleaseUpdateService(new StubHttpMessageHandler((_, _) =>
+        Task.FromResult(JsonResponse("bad", "javascript:alert(1)", prerelease: false))));
+    Assert.Throws<InvalidDataException>(() =>
+        malformed.CheckAsync("1.1.0").AsTask().GetAwaiter().GetResult());
+
+    using var prerelease = new GitHubReleaseUpdateService(new StubHttpMessageHandler((_, _) =>
+        Task.FromResult(JsonResponse("v1.2.0-beta.1", "https://github.com/G1LL1ES/SCOverlay/releases/tag/v1.2.0-beta.1", prerelease: true))));
+    Assert.Throws<InvalidDataException>(() =>
+        prerelease.CheckAsync("1.1.0").AsTask().GetAwaiter().GetResult());
+});
+
+runner.Test("GitHub update service surfaces HTTP failures and honors timeout", () =>
+{
+    using var failed = new GitHubReleaseUpdateService(new StubHttpMessageHandler((_, _) =>
+        Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden))));
+    Assert.Throws<HttpRequestException>(() =>
+        failed.CheckAsync("1.1.0").AsTask().GetAwaiter().GetResult());
+
+    using var timedOut = new GitHubReleaseUpdateService(
+        new StubHttpMessageHandler(async (_, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return JsonResponse("v1.2.0", "https://github.com/G1LL1ES/SCOverlay/releases/tag/v1.2.0", prerelease: false);
+        }),
+        TimeSpan.FromMilliseconds(20));
+    Assert.Throws<OperationCanceledException>(() =>
+        timedOut.CheckAsync("1.1.0").AsTask().GetAwaiter().GetResult());
 });
 
 runner.Test("App settings store recovers from corrupt settings with newest valid backup", () =>
@@ -1623,6 +1699,35 @@ static InputSnapshot AxisSnapshot(DateTimeOffset timestamp, double value)
         new Dictionary<string, bool>());
 }
 
+static ReleaseUpdateInfo CheckRelease(string latestVersion, string currentVersion)
+{
+    using var service = new GitHubReleaseUpdateService(new StubHttpMessageHandler((request, _) =>
+    {
+        Assert.Equal(GitHubReleaseUpdateService.LatestReleaseApiUrl, request.RequestUri?.AbsoluteUri);
+        Assert.True(request.Headers.UserAgent.Any());
+        return Task.FromResult(JsonResponse(
+            latestVersion,
+            $"https://github.com/G1LL1ES/SCOverlay/releases/tag/{latestVersion}",
+            prerelease: false));
+    }));
+    return service.CheckAsync(currentVersion).AsTask().GetAwaiter().GetResult();
+}
+
+static HttpResponseMessage JsonResponse(string tagName, string htmlUrl, bool prerelease)
+{
+    string json = JsonSerializer.Serialize(new
+    {
+        tag_name = tagName,
+        html_url = htmlUrl,
+        draft = false,
+        prerelease
+    });
+    return new HttpResponseMessage(HttpStatusCode.OK)
+    {
+        Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json")
+    };
+}
+
 internal sealed class TestRunner
 {
     private int passed;
@@ -1694,6 +1799,35 @@ internal static class Assert
             throw new InvalidOperationException($"Expected collection to contain {expected}.");
         }
     }
+
+    public static void Throws<TException>(Action action)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException($"Expected {typeof(TException).Name}.");
+    }
+}
+
+internal sealed class StubHttpMessageHandler : HttpMessageHandler
+{
+    private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler;
+
+    public StubHttpMessageHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> handler)
+    {
+        this.handler = handler;
+    }
+
+    protected override Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken) => handler(request, cancellationToken);
 }
 
 internal sealed class FakeInputProvider : IInputProvider

@@ -11,6 +11,15 @@ public sealed record AppSettings
     public DateTimeOffset? LastUpdateCheckUtc { get; init; }
 
     public string? DismissedUpdateVersion { get; init; }
+
+    public StarCitizenAxisTranslationSettings StarCitizenAxisTranslation { get; init; } = new();
+}
+
+public sealed record StarCitizenAxisTranslationSettings
+{
+    public bool Enabled { get; init; }
+
+    public string ActionMapsPath { get; init; } = string.Empty;
 }
 
 public sealed record DesktopOverlaySettings

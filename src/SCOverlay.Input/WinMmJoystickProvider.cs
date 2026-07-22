@@ -37,6 +37,7 @@ public sealed class WinMmJoystickProvider
     {
         var axes = new Dictionary<string, double>(StringComparer.Ordinal);
         var buttons = new Dictionary<string, bool>(StringComparer.Ordinal);
+        var identities = new Dictionary<string, NormalizedAxisIdentity>(StringComparer.Ordinal);
         CachedJoystick[] devices = GetCachedDevices();
 
         foreach (CachedJoystick device in devices)
@@ -50,25 +51,31 @@ public sealed class WinMmJoystickProvider
             NativeMethods.JoyCaps caps = device.Capabilities;
             axes[InputSnapshotKeys.JoystickAxis(deviceId, 0)] = Normalize(position.XPosition, caps.XMin, caps.XMax);
             axes[InputSnapshotKeys.JoystickAxis(deviceId, 1)] = Normalize(position.YPosition, caps.YMin, caps.YMax);
+            AddIdentity(identities, device, 0, "x");
+            AddIdentity(identities, device, 1, "y");
 
             if ((caps.Caps & NativeMethods.JOYCAPS_HASZ) != 0)
             {
                 axes[InputSnapshotKeys.JoystickAxis(deviceId, 2)] = Normalize(position.ZPosition, caps.ZMin, caps.ZMax);
+                AddIdentity(identities, device, 2, "z");
             }
 
             if ((caps.Caps & NativeMethods.JOYCAPS_HASR) != 0)
             {
                 axes[InputSnapshotKeys.JoystickAxis(deviceId, 3)] = Normalize(position.RPosition, caps.RMin, caps.RMax);
+                AddIdentity(identities, device, 3, "rotx");
             }
 
             if ((caps.Caps & NativeMethods.JOYCAPS_HASU) != 0)
             {
                 axes[InputSnapshotKeys.JoystickAxis(deviceId, 4)] = Normalize(position.UPosition, caps.UMin, caps.UMax);
+                AddIdentity(identities, device, 4, "slider1");
             }
 
             if ((caps.Caps & NativeMethods.JOYCAPS_HASV) != 0)
             {
                 axes[InputSnapshotKeys.JoystickAxis(deviceId, 5)] = Normalize(position.VPosition, caps.VMin, caps.VMax);
+                AddIdentity(identities, device, 5, "slider2");
             }
 
             int buttonCount = (int)Math.Min(caps.NumButtons, 32);
@@ -79,7 +86,13 @@ public sealed class WinMmJoystickProvider
             }
         }
 
-        return new InputSnapshot(timestamp, axes, buttons);
+        return new InputSnapshot(timestamp, axes, buttons, identities);
+    }
+
+    private static void AddIdentity(IDictionary<string, NormalizedAxisIdentity> identities, CachedJoystick device, int index, string name)
+    {
+        identities[InputSnapshotKeys.JoystickAxis(device.Info.DeviceId, index)] =
+            new NormalizedAxisIdentity(device.Info.StableIdentity ?? device.Info.DeviceId, index, name, Confidence: AxisMatchConfidence.Medium);
     }
 
     private CachedJoystick[] GetCachedDevices()

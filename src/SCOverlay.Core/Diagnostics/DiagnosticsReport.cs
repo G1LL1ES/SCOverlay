@@ -17,7 +17,9 @@ public sealed record DiagnosticsReport(
     IReadOnlyList<InputDeviceInfo> Devices,
     InputSnapshot RawSnapshot,
     EvaluatedInputState EvaluatedInput,
-    IReadOnlyList<string> RecentLogLines);
+    IReadOnlyList<string> RecentLogLines,
+    StarCitizenAxisTranslationStatus? StarCitizenAxisTranslation = null,
+    IReadOnlyList<string>? StarCitizenAxisDiagnostics = null);
 
 public static class DiagnosticsReportWriter
 {

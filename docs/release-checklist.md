@@ -14,10 +14,10 @@ For local portable-only validation:
 
 Default output:
 
-- Installer: `artifacts\release\SCOverlay-1.1.0-win-x64-setup.exe`
-- Installer checksum: `artifacts\release\SCOverlay-1.1.0-win-x64-setup.exe.sha256`
-- Portable zip: `artifacts\release\SCOverlay-1.1.0-win-x64-self-contained.zip`
-- Portable checksum: `artifacts\release\SCOverlay-1.1.0-win-x64-self-contained.zip.sha256`
+- Installer: `artifacts\release\SCOverlay-<version>-win-x64-setup.exe`
+- Installer checksum: `artifacts\release\SCOverlay-<version>-win-x64-setup.exe.sha256`
+- Portable zip: `artifacts\release\SCOverlay-<version>-win-x64-self-contained.zip`
+- Portable checksum: `artifacts\release\SCOverlay-<version>-win-x64-self-contained.zip.sha256`
 
 Both packages are self-contained for `win-x64`, so testers should not need the .NET runtime. Neither package may contain source, tests, scripts, symbols, or development documentation. The installer includes the MIT license; the portable zip includes the license and concise portable notes.
 

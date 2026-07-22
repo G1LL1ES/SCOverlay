@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private readonly FileAppSettingsStore settingsStore;
     private readonly WindowsInputProvider inputProvider;
     private readonly OverlayStateEngine stateEngine;
+    private readonly StarCitizenAxisTranslationService starCitizenAxisTranslationService;
     private readonly GitHubReleaseUpdateService releaseUpdateService;
     private readonly CancellationTokenSource updateCheckCancellation = new();
     private readonly DispatcherTimer inputTimer;
@@ -63,6 +64,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? captureCancellation;
     private int captureSessionId;
     private bool isLoadingUpdateUi = true;
+    private bool isLoadingStarCitizenAxisUi = true;
     private Uri? availableReleaseUri;
     private string? availableReleaseVersion;
 
@@ -81,7 +83,14 @@ public partial class MainWindow : Window
         };
         latestOverlayState = OverlayState.Empty(profile.Id);
         inputProvider = new WindowsInputProvider();
-        stateEngine = new OverlayStateEngine();
+        starCitizenAxisTranslationService = new StarCitizenAxisTranslationService();
+        string configuredActionMapsPath = appSettings.StarCitizenAxisTranslation.ActionMapsPath;
+        if (string.IsNullOrWhiteSpace(configuredActionMapsPath))
+        {
+            configuredActionMapsPath = StarCitizenAxisTranslationService.FindActionMapsPath();
+        }
+        starCitizenAxisTranslationService.Configure(appSettings.StarCitizenAxisTranslation.Enabled, configuredActionMapsPath);
+        stateEngine = new OverlayStateEngine(starCitizenAxisTranslationService);
         releaseUpdateService = new GitHubReleaseUpdateService();
         browserSourceServer = new BrowserSourceServer(profile.Runtime, OverlayState.Empty(profile.Id));
         inputTimer = new DispatcherTimer
@@ -94,6 +103,10 @@ public partial class MainWindow : Window
 
         AutomaticUpdateChecksCheckBox.IsChecked = appSettings.AutomaticUpdateChecksEnabled;
         isLoadingUpdateUi = false;
+        StarCitizenAxisTranslationCheckBox.IsChecked = appSettings.StarCitizenAxisTranslation.Enabled;
+        StarCitizenActionMapsPathTextBox.Text = configuredActionMapsPath;
+        isLoadingStarCitizenAxisUi = false;
+        RefreshStarCitizenAxisTranslationStatus();
 
         ProfileComboBox.ItemsSource = profileItems;
         BindingSourceComboBox.ItemsSource = bindableSourceItems;
@@ -475,7 +488,7 @@ public partial class MainWindow : Window
         try
         {
             InputSnapshot snapshot = inputProvider.Poll();
-            EvaluatedInputState evaluated = InputSourceEvaluator.Evaluate(profile.InputSources, snapshot);
+            EvaluatedInputState evaluated = InputSourceEvaluator.Evaluate(profile.InputSources, snapshot, starCitizenAxisTranslationService);
             OverlayState overlayState = stateEngine.BuildState(profile, snapshot);
             latestInputSnapshot = snapshot;
             latestEvaluatedInputState = evaluated;
@@ -485,6 +498,7 @@ public partial class MainWindow : Window
 
             RawSnapshotText.Text = FormatRawSnapshot(snapshot);
             ProfileValuesText.Text = FormatProfileValues(evaluated);
+            RefreshStarCitizenAxisTranslationStatus();
         }
         catch (Exception exception)
         {
@@ -656,6 +670,66 @@ public partial class MainWindow : Window
             log.Error("Failed to refresh devices.", exception);
             FooterStatusText.Text = $"Could not refresh devices: {exception.Message}";
         }
+    }
+
+    private async void StarCitizenAxisTranslationCheckBox_OnChanged(object sender, RoutedEventArgs e)
+    {
+        if (isLoadingStarCitizenAxisUi) return;
+        await SaveStarCitizenAxisTranslationSettingsAsync();
+    }
+
+    private async void BrowseStarCitizenActionMapsButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Select the active Star Citizen actionmaps.xml",
+            Filter = "Star Citizen action maps (actionmaps.xml)|actionmaps.xml|XML files (*.xml)|*.xml",
+            FileName = "actionmaps.xml",
+            CheckFileExists = true
+        };
+        if (dialog.ShowDialog(this) != true) return;
+        StarCitizenActionMapsPathTextBox.Text = dialog.FileName;
+        await SaveStarCitizenAxisTranslationSettingsAsync();
+    }
+
+    private async void StarCitizenActionMapsPathTextBox_OnLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (!isLoadingStarCitizenAxisUi &&
+            !string.Equals(StarCitizenActionMapsPathTextBox.Text.Trim(), appSettings.StarCitizenAxisTranslation.ActionMapsPath, StringComparison.OrdinalIgnoreCase))
+        {
+            await SaveStarCitizenAxisTranslationSettingsAsync();
+        }
+    }
+
+    private async Task SaveStarCitizenAxisTranslationSettingsAsync()
+    {
+        var settings = new StarCitizenAxisTranslationSettings
+        {
+            Enabled = StarCitizenAxisTranslationCheckBox.IsChecked == true,
+            ActionMapsPath = StarCitizenActionMapsPathTextBox.Text.Trim()
+        };
+        appSettings = appSettings with { StarCitizenAxisTranslation = settings };
+        starCitizenAxisTranslationService.Configure(settings.Enabled, settings.ActionMapsPath);
+        stateEngine.Reset();
+        try
+        {
+            await settingsStore.SaveAsync(appSettings);
+            RefreshStarCitizenAxisTranslationStatus();
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to save Star Citizen axis translation settings.", exception);
+            StarCitizenAxisTranslationStatusText.Text = $"Could not save setting: {exception.Message}";
+        }
+    }
+
+    private void RefreshStarCitizenAxisTranslationStatus()
+    {
+        StarCitizenAxisTranslationStatus status = starCitizenAxisTranslationService.Status;
+        string profileText = string.IsNullOrWhiteSpace(status.ProfileName) ? string.Empty : $" Profile: {status.ProfileName}.";
+        string diagnostics = string.Join(Environment.NewLine, starCitizenAxisTranslationService.AxisDiagnostics.Take(8));
+        StarCitizenAxisTranslationStatusText.Text = $"{status.Message}{profileText} Matched axes: {status.MatchedAxes}; raw fallbacks: {status.RawFallbackAxes}." +
+            (string.IsNullOrWhiteSpace(diagnostics) ? string.Empty : Environment.NewLine + diagnostics);
     }
 
     private void OpenLogsFolderButton_OnClick(object sender, RoutedEventArgs e)
@@ -1888,7 +1962,9 @@ public partial class MainWindow : Window
                 Devices: latestDevices,
                 RawSnapshot: latestInputSnapshot,
                 EvaluatedInput: latestEvaluatedInputState,
-                RecentLogLines: log.RecentLines(120));
+                RecentLogLines: log.RecentLines(120),
+                StarCitizenAxisTranslation: starCitizenAxisTranslationService.Status,
+                StarCitizenAxisDiagnostics: starCitizenAxisTranslationService.AxisDiagnostics);
             string fileName = $"sc-overlay-diagnostics-{DateTimeOffset.Now:yyyyMMdd-HHmmss}.json";
             string path = Path.Combine(paths.DiagnosticsDirectory, fileName);
             await File.WriteAllTextAsync(path, DiagnosticsReportWriter.CreateJson(report));

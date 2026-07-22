@@ -10,6 +10,20 @@
         Height="720"
         Width="1180"
         Background="#101418">
+    <Window.Resources>
+        <Style x:Key="PanelScrollViewerStyle"
+               TargetType="ScrollViewer">
+            <Setter Property="VerticalScrollBarVisibility"
+                    Value="Auto" />
+            <Setter Property="HorizontalScrollBarVisibility"
+                    Value="Disabled" />
+            <Setter Property="CanContentScroll"
+                    Value="False" />
+            <Setter Property="PanningMode"
+                    Value="VerticalOnly" />
+        </Style>
+    </Window.Resources>
+
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -97,7 +111,8 @@
                             Background="#111820"
                             CornerRadius="4"
                             Padding="16">
-                        <StackPanel>
+                        <ScrollViewer Style="{StaticResource PanelScrollViewerStyle}">
+                            <StackPanel>
                             <TextBlock Text="Profiles"
                                        Foreground="#F2F6FA"
                                        FontSize="16"
@@ -194,6 +209,40 @@
                                        Margin="0,8,0,0"
                                        TextWrapping="Wrap" />
 
+                            <TextBlock Text="Star Citizen axis response"
+                                       Foreground="#F2F6FA"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Margin="0,24,0,0" />
+                            <CheckBox x:Name="StarCitizenAxisTranslationCheckBox"
+                                      Content="Match Star Citizen deadzone and saturation"
+                                      Foreground="#D5E1EA"
+                                      Margin="0,12,0,8"
+                                      Checked="StarCitizenAxisTranslationCheckBox_OnChanged"
+                                      Unchecked="StarCitizenAxisTranslationCheckBox_OnChanged" />
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="StarCitizenActionMapsPathTextBox"
+                                         MinHeight="30"
+                                         VerticalContentAlignment="Center"
+                                         ToolTip="Path to the active actionmaps.xml"
+                                         LostFocus="StarCitizenActionMapsPathTextBox_OnLostFocus" />
+                                <Button Grid.Column="2"
+                                        Content="Browse"
+                                        MinWidth="72"
+                                        Height="30"
+                                        Click="BrowseStarCitizenActionMapsButton_OnClick" />
+                            </Grid>
+                            <TextBlock x:Name="StarCitizenAxisTranslationStatusText"
+                                       Foreground="#9FB0BE"
+                                       FontSize="12"
+                                       Margin="0,8,0,0"
+                                       TextWrapping="Wrap" />
+
                             <TextBlock Text="Support"
                                        Foreground="#F2F6FA"
                                        FontSize="16"
@@ -231,7 +280,8 @@
                                        FontSize="12"
                                        Margin="0,4,0,0"
                                        TextWrapping="Wrap" />
-                        </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Border>
 
                     <Border Grid.Column="2"
@@ -408,7 +458,8 @@
                             Background="#111820"
                             CornerRadius="4"
                             Padding="16">
-                        <StackPanel>
+                        <ScrollViewer Style="{StaticResource PanelScrollViewerStyle}">
+                            <StackPanel>
                             <TextBlock Text="HUD style"
                                        Foreground="#F2F6FA"
                                        FontSize="16"
@@ -596,7 +647,8 @@
                                         Margin="0,0,8,8"
                                         Click="ResetAppearanceButton_OnClick" />
                             </WrapPanel>
-                        </StackPanel>
+                            </StackPanel>
+                        </ScrollViewer>
                     </Border>
 
                     <Border Grid.Column="2"
@@ -605,8 +657,9 @@
                             Background="#111820"
                             CornerRadius="4"
                             Padding="16">
-                        <Grid>
-                            <Grid.RowDefinitions>
+                        <ScrollViewer Style="{StaticResource PanelScrollViewerStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -617,7 +670,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                                </Grid.RowDefinitions>
 
                             <TextBlock Text="Sizing and opacity"
                                        Foreground="#F2F6FA"
@@ -839,7 +892,8 @@
                                            TextAlignment="Right"
                                            VerticalAlignment="Center" />
                             </Grid>
-                        </Grid>
+                            </Grid>
+                        </ScrollViewer>
                     </Border>
                 </Grid>
             </TabItem>
@@ -911,8 +965,9 @@
                             Background="#111820"
                             CornerRadius="4"
                             Padding="16">
-                        <Grid>
-                            <Grid.RowDefinitions>
+                        <ScrollViewer Style="{StaticResource PanelScrollViewerStyle}">
+                            <Grid>
+                                <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
@@ -922,7 +977,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
+                                </Grid.RowDefinitions>
 
                             <TextBlock Text="Layout"
                                        Foreground="#F2F6FA"
@@ -1105,7 +1160,8 @@
                                            TextAlignment="Right"
                                            VerticalAlignment="Center" />
                             </Grid>
-                        </Grid>
+                            </Grid>
+                        </ScrollViewer>
                     </Border>
                 </Grid>
             </TabItem>
@@ -1132,41 +1188,55 @@
 
                         <Border BorderBrush="#26313C"
                                 BorderThickness="1"
-                                Background="#111820"
-                                CornerRadius="4"
-                                Padding="12">
-                            <StackPanel>
+                                 Background="#111820"
+                                 CornerRadius="4"
+                                 Padding="12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
                                 <TextBlock Text="Raw snapshot"
                                            Foreground="#F2F6FA"
                                            FontSize="14"
                                            FontWeight="SemiBold" />
-                                <TextBlock x:Name="RawSnapshotText"
-                                           Foreground="#D5E1EA"
-                                           FontFamily="Consolas"
-                                           FontSize="12"
-                                           Margin="0,8,0,0"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
+                                <ScrollViewer Grid.Row="1"
+                                              Style="{StaticResource PanelScrollViewerStyle}"
+                                              Margin="0,8,0,0">
+                                    <TextBlock x:Name="RawSnapshotText"
+                                               Foreground="#D5E1EA"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               TextWrapping="Wrap" />
+                                </ScrollViewer>
+                            </Grid>
                         </Border>
 
                         <Border Grid.Column="2"
                                 BorderBrush="#26313C"
                                 BorderThickness="1"
-                                Background="#111820"
-                                CornerRadius="4"
-                                Padding="12">
-                            <StackPanel>
+                                 Background="#111820"
+                                 CornerRadius="4"
+                                 Padding="12">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
                                 <TextBlock Text="Profile values"
                                            Foreground="#F2F6FA"
                                            FontSize="14"
                                            FontWeight="SemiBold" />
-                                <TextBlock x:Name="ProfileValuesText"
-                                           Foreground="#D5E1EA"
-                                           FontFamily="Consolas"
-                                           FontSize="12"
-                                           Margin="0,8,0,0"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
+                                <ScrollViewer Grid.Row="1"
+                                              Style="{StaticResource PanelScrollViewerStyle}"
+                                              Margin="0,8,0,0">
+                                    <TextBlock x:Name="ProfileValuesText"
+                                               Foreground="#D5E1EA"
+                                               FontFamily="Consolas"
+                                               FontSize="12"
+                                               TextWrapping="Wrap" />
+                                </ScrollViewer>
+                            </Grid>
                         </Border>
                     </Grid>
                 </Grid>

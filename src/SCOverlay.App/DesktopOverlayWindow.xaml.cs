@@ -271,6 +271,7 @@ public partial class DesktopOverlayWindow : Window
         double opacity = WidgetOpacity(widget);
         MediaBrush display = Brush(widget.DisplayColor, opacity);
         MediaBrush frame = Brush(widget.FrameDisplayColor, opacity);
+        double frameRadius = ClampCornerRadius(widget.CornerRadius, width, height);
 
         Add(new WpfRectangle
         {
@@ -278,8 +279,8 @@ public partial class DesktopOverlayWindow : Window
             Height = height,
             Stroke = frame,
             StrokeThickness = Math.Max(widget.LineThickness, 0.0),
-            RadiusX = Math.Max(widget.CornerRadius, 0.0),
-            RadiusY = Math.Max(widget.CornerRadius, 0.0),
+            RadiusX = frameRadius,
+            RadiusY = frameRadius,
             Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - (width / 2.0), y - (height / 2.0));
 
@@ -291,6 +292,7 @@ public partial class DesktopOverlayWindow : Window
         double travel = Math.Max((innerHeight - centerBand) / 2.0, 0.0);
         double extension = travel * ratio;
         double fillHeight = centerBand + extension;
+        double fillRadius = ClampCornerRadius(widget.CornerRadius - inset, innerWidth, fillHeight);
         double fillTop = widget.Value >= 0.0
             ? y - (centerBand / 2.0) - extension
             : y - (centerBand / 2.0);
@@ -298,8 +300,8 @@ public partial class DesktopOverlayWindow : Window
         {
             Width = innerWidth,
             Height = fillHeight,
-            RadiusX = Math.Max(widget.CornerRadius - inset, 0.0),
-            RadiusY = Math.Max(widget.CornerRadius - inset, 0.0),
+            RadiusX = fillRadius,
+            RadiusY = fillRadius,
             Fill = Brush(widget.DisplayColor, opacity * 0.82),
             Effect = ShadowEffect(widget.VisualEffects, opacity)
         }, x - (width / 2.0) + inset, fillTop);
@@ -444,7 +446,8 @@ public partial class DesktopOverlayWindow : Window
 
     private void DrawStateText(StateTextWidgetState widget, double centerX, double centerY)
     {
-        double opacity = WidgetOpacity(widget) * (0.55 + (widget.Intensity * 0.45));
+        double connectedOpacity = WidgetOpacity(widget);
+        double textOpacity = connectedOpacity * (0.55 + (widget.Intensity * 0.45));
         double textX = centerX + widget.X;
         double textY = centerY + widget.Y;
         if (widget.ShakeIntensity > 0.0)
@@ -456,10 +459,10 @@ public partial class DesktopOverlayWindow : Window
         var text = new TextBlock
         {
             Text = widget.Text,
-            Foreground = Brush(widget.DisplayColor, opacity),
+            Foreground = Brush(widget.DisplayColor, textOpacity),
             FontSize = Math.Max(widget.FontSize, 8),
             FontWeight = FontWeights.Bold,
-            Effect = ShadowEffect(widget.TextEffects, opacity)
+            Effect = ShadowEffect(widget.TextEffects, connectedOpacity)
         };
         text.Measure(new WpfSize(double.PositiveInfinity, double.PositiveInfinity));
         double left = textX - (text.DesiredSize.Width / 2.0);
@@ -473,13 +476,13 @@ public partial class DesktopOverlayWindow : Window
                 Height = text.DesiredSize.Height + (padding * 1.2),
                 RadiusX = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
                 RadiusY = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
-                Fill = Brush(widget.TextEffects.BackplateColor, 1.0)
+                Fill = Brush(widget.TextEffects.BackplateColor, connectedOpacity)
             }, left - padding, top - (padding * 0.6));
         }
 
         if (widget.TextEffects.OutlineEnabled && widget.TextEffects.OutlineWidth > 0.0)
         {
-            AddTextOutline(widget, left, top, text.DesiredSize, opacity);
+            AddTextOutline(widget, left, top, text.DesiredSize, connectedOpacity);
         }
 
         Add(text, left, top);
@@ -500,6 +503,11 @@ public partial class DesktopOverlayWindow : Window
     private static double WidgetOpacity(WidgetState widget)
     {
         return widget.Connected ? 1.0 : 0.32;
+    }
+
+    private static double ClampCornerRadius(double radius, double width, double height)
+    {
+        return Math.Max(0.0, Math.Min(radius, Math.Min(width / 2.0, height / 2.0)));
     }
 
     private static MediaBrush Brush(RgbaColor color, double opacity)
@@ -533,7 +541,7 @@ public partial class DesktopOverlayWindow : Window
             var outline = new TextBlock
             {
                 Text = widget.Text,
-                Foreground = Brush(widget.TextEffects.OutlineColor, 1.0),
+                Foreground = Brush(widget.TextEffects.OutlineColor, opacity),
                 FontSize = Math.Max(widget.FontSize, 8),
                 FontWeight = FontWeights.Bold
             };
@@ -563,7 +571,7 @@ public partial class DesktopOverlayWindow : Window
             BlurRadius = Math.Max(effects.ShadowWidth, 0.0),
             Direction = direction,
             ShadowDepth = depth,
-            Opacity = AlphaFactor(effects.ShadowColor)
+            Opacity = AlphaFactor(effects.ShadowColor) * Math.Clamp(opacity, 0.0, 1.0)
         };
     }
 

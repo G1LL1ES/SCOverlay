@@ -18,6 +18,7 @@ SC Overlay can:
 - Show the same overlay on your desktop with a transparent always-on-top window.
 - Capture keyboard keys, mouse buttons, joystick buttons, joystick axes, and Raw HID inputs.
 - Mix device types in one profile, such as keyboard plus right stick, mouse buttons plus throttle, or full HOTAS/HOSAS setups.
+- Optionally match the joystick deadzone and saturation settings from Star Citizen's active `actionmaps.xml`.
 - Let you create, save, import, and export profiles from the app.
 - Let you customize colors, opacity, widget scale, widget position, line thickness, rounded corners, shadows, outlines, and text backing.
 - Show roll as a rotating ship image or as a classic indicator.
@@ -86,6 +87,8 @@ The main tabs are:
 Use **Setup** to choose the active profile, manage profiles, start the desktop overlay, and copy the OBS browser source URL.
 
 The detected devices list shows what SC Overlay can currently see from Windows. If you plug in or unplug devices, use **Refresh Devices** before binding controls.
+
+**Star Citizen axis response** can apply the deadzone and saturation values from your active `actionmaps.xml` before SC Overlay renders joystick movement. Select the file manually if it is not detected automatically. This setting is optional and falls back to raw input for any axis it cannot match confidently.
 
 Useful buttons:
 

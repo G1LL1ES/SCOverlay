@@ -160,10 +160,18 @@ public sealed class RawInputHidProvider : IDisposable
 
     public InputSnapshot Poll(DateTimeOffset timestamp)
     {
+        Dictionary<string, NormalizedAxisIdentity> identities = devicesByHandle.Values
+            .SelectMany(device => device.AxisItems.Select(item => new KeyValuePair<string, NormalizedAxisIdentity>(
+                InputSnapshotKeys.JoystickAxis(device.DeviceId, item.Index),
+                new NormalizedAxisIdentity(device.DeviceId, item.Index, ToStarCitizenAxisName(item.Usage),
+                    device.VendorId, device.ProductId, AxisMatchConfidence.High))))
+            .GroupBy(pair => pair.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First().Value, StringComparer.Ordinal);
         return new InputSnapshot(
             timestamp,
             axes.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
-            buttons.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal));
+            buttons.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal),
+            identities);
     }
 
     public void Dispose()
@@ -572,6 +580,19 @@ public sealed class RawInputHidProvider : IDisposable
             NativeMethods.HID_USAGE_GENERIC_DIAL or
             NativeMethods.HID_USAGE_GENERIC_WHEEL;
     }
+
+    private static string ToStarCitizenAxisName(ushort usage) => usage switch
+    {
+        NativeMethods.HID_USAGE_GENERIC_X => "x",
+        NativeMethods.HID_USAGE_GENERIC_Y => "y",
+        NativeMethods.HID_USAGE_GENERIC_Z => "z",
+        NativeMethods.HID_USAGE_GENERIC_RX => "rotx",
+        NativeMethods.HID_USAGE_GENERIC_RY => "roty",
+        NativeMethods.HID_USAGE_GENERIC_RZ => "rotz",
+        NativeMethods.HID_USAGE_GENERIC_SLIDER => "slider1",
+        NativeMethods.HID_USAGE_GENERIC_DIAL => "slider2",
+        _ => string.Empty
+    };
 
     private static double NormalizeUsageValue(uint value, int logicalMinimum, int logicalMaximum)
     {

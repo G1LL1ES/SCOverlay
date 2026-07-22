@@ -1346,6 +1346,68 @@ runner.Test("Overlay state engine reports joystick widgets disconnected when sou
     Assert.True(state.Widgets.All(widget => !widget.Connected));
 });
 
+runner.Test("Overlay state engine recognizes compatible HID ids as connected", () =>
+{
+    const string configuredDeviceId = "hid:vid_231D&pid_0125:0";
+    const string snapshotDeviceId = "hid:vid_231D&pid_0125:vkb_gladiator_nxt:91dd3bb0";
+    var profile = new OverlayProfile
+    {
+        Id = "compatible-hid-connection",
+        Name = "Compatible HID Connection",
+        InputSources = new InputSource[]
+        {
+            new JoystickAxisInputSource
+            {
+                Id = "brake",
+                DisplayName = "Brake",
+                DeviceId = configuredDeviceId,
+                AxisIndex = 6
+            },
+            new JoystickButtonInputSource
+            {
+                Id = "boost",
+                DisplayName = "Boost",
+                DeviceId = configuredDeviceId,
+                ButtonIndex = 4
+            }
+        },
+        Widgets = new WidgetDefinition[]
+        {
+            new StateTextWidgetDefinition
+            {
+                Id = "brake-widget",
+                DisplayName = "Brake",
+                Text = "BRAKE",
+                SourceId = "brake",
+                SourceKind = InputSourceKind.Axis
+            },
+            new StateTextWidgetDefinition
+            {
+                Id = "boost-widget",
+                DisplayName = "Boost",
+                Text = "BOOST",
+                SourceId = "boost",
+                SourceKind = InputSourceKind.Button
+            }
+        }
+    };
+    var snapshot = new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double>
+        {
+            [InputSnapshotKeys.JoystickAxis(snapshotDeviceId, 6)] = 0.0
+        },
+        new Dictionary<string, bool>
+        {
+            [InputSnapshotKeys.JoystickButton(snapshotDeviceId, 4)] = false
+        });
+
+    OverlayState state = new OverlayStateEngine().BuildState(profile, snapshot);
+
+    Assert.True(state.Connected);
+    Assert.True(state.Widgets.All(widget => widget.Connected));
+});
+
 runner.Test("Overlay state engine computes button and axis state text intensity", () =>
 {
     OverlayProfile profile = DefaultProfiles.CreateKbmDefault();
@@ -1663,6 +1725,11 @@ runner.Test("Browser source serves OBS page, state JSON, and assets", () =>
     Assert.True(html.Contains("<canvas", StringComparison.OrdinalIgnoreCase));
     Assert.True(html.Contains("fetch('/state'", StringComparison.Ordinal));
     Assert.True(html.Contains("function tintImage", StringComparison.Ordinal));
+    Assert.True(html.Contains("const designWidth = 900;", StringComparison.Ordinal));
+    Assert.True(html.Contains("const designHeight = 520;", StringComparison.Ordinal));
+    Assert.True(html.Contains("ctx.scale(scale, scale);", StringComparison.Ordinal));
+    Assert.True(html.Contains("\"Segoe UI\"", StringComparison.Ordinal));
+    Assert.True(html.Contains("ctx.shadowColor = 'transparent';", StringComparison.Ordinal));
     Assert.True(json.Contains("\"profileId\":\"kbm-default\"", StringComparison.Ordinal));
     Assert.True(json.Contains("\"type\":\"stateText\"", StringComparison.Ordinal));
     Assert.True(assets.Contains("roll-indicator-default", StringComparison.Ordinal));
@@ -1672,6 +1739,61 @@ runner.Test("Browser source serves OBS page, state JSON, and assets", () =>
     Assert.True(gladius.Length > 1000);
     Assert.True(arrow.Length > 1000);
     Assert.True(updatedJson.Contains("\"profileId\":\"updated-profile\"", StringComparison.Ordinal));
+});
+
+runner.Test("Star Citizen axis transform applies deadzone and saturation", () =>
+{
+    Assert.Near(0.0, StarCitizenAxisTranslationService.Apply(0.05, 0.1, 0.5), 0.000001);
+    Assert.Near(0.25, StarCitizenAxisTranslationService.Apply(0.2, 0.1, 0.5), 0.000001);
+    Assert.Near(1.0, StarCitizenAxisTranslationService.Apply(0.5, 0.1, 0.5), 0.000001);
+    Assert.Near(-1.0, StarCitizenAxisTranslationService.Apply(-0.5, 0.1, 0.5), 0.000001);
+    Assert.Near(0.4, StarCitizenAxisTranslationService.Apply(0.4, 0.5, 0.5), 0.000001);
+});
+
+runner.Test("Star Citizen parser merges repeated axis options and matches HID PID VID", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    string path = Path.Combine(root, "actionmaps.xml");
+    File.WriteAllText(path, """
+        <ActionMaps><ActionProfiles profileName="default">
+          <deviceoptions name="Test Stick {1234ABCD-0000-0000-0000-504944564944}">
+            <option input="x" deadzone="0.1" />
+            <option input="x" saturation="0.5" />
+            <option input="x" saturation="0.5" />
+          </deviceoptions>
+        </ActionProfiles></ActionMaps>
+        """);
+    var service = new StarCitizenAxisTranslationService();
+    service.Configure(true, path);
+    double translated = service.Transform(
+        new JoystickAxisTransformContext("hid:test", 0,
+            new NormalizedAxisIdentity("hid:test", 0, "x", 0xABCD, 0x1234)),
+        0.5);
+    Assert.Near(1.0, translated, 0.000001);
+    Assert.True(service.Status.Loaded);
+});
+
+runner.Test("Star Citizen translation occurs before source inversion and scaling", () =>
+{
+    string root = Path.Combine(Path.GetTempPath(), $"SCOverlayTests-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(root);
+    string path = Path.Combine(root, "actionmaps.xml");
+    File.WriteAllText(path, """
+        <ActionMaps><ActionProfiles><deviceoptions name="Test {1234ABCD-0000-0000-0000-504944564944}">
+          <option input="x" saturation="0.5" />
+        </deviceoptions></ActionProfiles></ActionMaps>
+        """);
+    var service = new StarCitizenAxisTranslationService();
+    service.Configure(true, path);
+    var source = new JoystickAxisInputSource { Id = "axis", DeviceId = "hid:test", AxisIndex = 0, Invert = true, Scale = 0.5 };
+    string key = InputSnapshotKeys.JoystickAxis("hid:test", 0);
+    var snapshot = new InputSnapshot(DateTimeOffset.UtcNow,
+        new Dictionary<string, double> { [key] = 0.5 },
+        new Dictionary<string, bool>(),
+        new Dictionary<string, NormalizedAxisIdentity> { [key] = new("hid:test", 0, "x", 0xABCD, 0x1234) });
+    EvaluatedInputState evaluated = InputSourceEvaluator.Evaluate(new[] { source }, snapshot, service);
+    Assert.Near(-0.5, evaluated.GetAxis("axis"), 0.000001);
 });
 
 return runner.Finish();
@@ -1760,6 +1882,14 @@ internal sealed class TestRunner
 
 internal static class Assert
 {
+    public static void Near(double expected, double actual, double tolerance)
+    {
+        if (Math.Abs(expected - actual) > tolerance)
+        {
+            throw new InvalidOperationException($"Expected {expected} +/- {tolerance}, got {actual}.");
+        }
+    }
+
     public static void Equal<T>(T expected, T actual)
     {
         if (!EqualityComparer<T>.Default.Equals(expected, actual))

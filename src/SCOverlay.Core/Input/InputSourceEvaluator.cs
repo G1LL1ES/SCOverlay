@@ -4,7 +4,7 @@ namespace SCOverlay.Core.Input;
 
 public static class InputSourceEvaluator
 {
-    public static EvaluatedInputState Evaluate(IEnumerable<InputSource> sources, InputSnapshot snapshot)
+    public static EvaluatedInputState Evaluate(IEnumerable<InputSource> sources, InputSnapshot snapshot, IAxisTransformProvider? axisTransformProvider = null)
     {
         ArgumentNullException.ThrowIfNull(sources);
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -22,7 +22,7 @@ public static class InputSourceEvaluator
         {
             if (source.Kind == InputSourceKind.Axis)
             {
-                axes[source.Id] = EvaluateAxis(source.Id, sourceMap, snapshot, axes, buttons, visiting);
+                axes[source.Id] = EvaluateAxis(source.Id, sourceMap, snapshot, axes, buttons, visiting, axisTransformProvider);
             }
             else
             {
@@ -39,7 +39,8 @@ public static class InputSourceEvaluator
         InputSnapshot snapshot,
         IDictionary<string, double> axes,
         IDictionary<string, bool> buttons,
-        ISet<string> visiting)
+        ISet<string> visiting,
+        IAxisTransformProvider? axisTransformProvider)
     {
         if (axes.TryGetValue(sourceId, out double cached))
         {
@@ -58,9 +59,9 @@ public static class InputSourceEvaluator
 
         double value = source switch
         {
-            JoystickAxisInputSource joystickAxis => EvaluateJoystickAxis(joystickAxis, snapshot),
+            JoystickAxisInputSource joystickAxis => EvaluateJoystickAxis(joystickAxis, snapshot, axisTransformProvider),
             VirtualButtonAxisInputSource virtualAxis => EvaluateVirtualButtonAxis(virtualAxis, sourceMap, snapshot, axes, buttons, visiting),
-            CompositeAxisInputSource compositeAxis => EvaluateCompositeAxis(compositeAxis, sourceMap, snapshot, axes, buttons, visiting),
+            CompositeAxisInputSource compositeAxis => EvaluateCompositeAxis(compositeAxis, sourceMap, snapshot, axes, buttons, visiting, axisTransformProvider),
             _ => 0.0
         };
 
@@ -107,7 +108,7 @@ public static class InputSourceEvaluator
         return value;
     }
 
-    private static double EvaluateJoystickAxis(JoystickAxisInputSource source, InputSnapshot snapshot)
+    private static double EvaluateJoystickAxis(JoystickAxisInputSource source, InputSnapshot snapshot, IAxisTransformProvider? axisTransformProvider)
     {
         string key = InputSnapshotKeys.JoystickAxis(source.DeviceId, source.AxisIndex);
         if (!snapshot.Axes.TryGetValue(key, out double value) &&
@@ -116,6 +117,17 @@ public static class InputSourceEvaluator
             return 0.0;
         }
 
+        string resolvedKey = key;
+        if (!snapshot.Axes.ContainsKey(key))
+        {
+            resolvedKey = snapshot.Axes.Keys.FirstOrDefault(candidate =>
+                InputSnapshotKeys.TryParseJoystickAxis(candidate, out string candidateDeviceId, out int candidateAxisIndex) &&
+                candidateAxisIndex == source.AxisIndex && InputSnapshotKeys.DeviceIdsMatch(source.DeviceId, candidateDeviceId)) ?? key;
+        }
+
+        NormalizedAxisIdentity? identity = null;
+        snapshot.AxisIdentities?.TryGetValue(resolvedKey, out identity);
+        value = axisTransformProvider?.Transform(new JoystickAxisTransformContext(source.DeviceId, source.AxisIndex, identity), value) ?? value;
         double scaled = value * source.Scale;
         return source.Invert ? -scaled : scaled;
     }
@@ -194,14 +206,15 @@ public static class InputSourceEvaluator
         InputSnapshot snapshot,
         IDictionary<string, double> axes,
         IDictionary<string, bool> buttons,
-        ISet<string> visiting)
+        ISet<string> visiting,
+        IAxisTransformProvider? axisTransformProvider)
     {
         double value = 0.0;
 
         foreach (AxisComponent component in source.Components)
         {
             double componentValue = component.SourceKind == InputSourceKind.Axis
-                ? EvaluateAxis(component.SourceId, sourceMap, snapshot, axes, buttons, visiting)
+                ? EvaluateAxis(component.SourceId, sourceMap, snapshot, axes, buttons, visiting, axisTransformProvider)
                 : EvaluateButton(component.SourceId, sourceMap, snapshot, axes, buttons, visiting) ? 1.0 : 0.0;
 
             componentValue = component.Region switch

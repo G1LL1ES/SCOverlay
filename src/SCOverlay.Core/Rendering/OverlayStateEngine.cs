@@ -6,15 +6,21 @@ namespace SCOverlay.Core.Rendering;
 
 public sealed class OverlayStateEngine : IOverlayStateEngine
 {
+    private readonly IAxisTransformProvider? axisTransformProvider;
     private readonly Dictionary<string, WidgetMemory> memory = new(StringComparer.Ordinal);
     private DateTimeOffset? previousTimestamp;
+
+    public OverlayStateEngine(IAxisTransformProvider? axisTransformProvider = null)
+    {
+        this.axisTransformProvider = axisTransformProvider;
+    }
 
     public OverlayState BuildState(OverlayProfile profile, InputSnapshot inputSnapshot)
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(inputSnapshot);
 
-        EvaluatedInputState inputState = InputSourceEvaluator.Evaluate(profile.InputSources, inputSnapshot);
+        EvaluatedInputState inputState = InputSourceEvaluator.Evaluate(profile.InputSources, inputSnapshot, axisTransformProvider);
         IReadOnlyDictionary<string, InputSource> sourceMap = profile.InputSources
             .Where(source => !string.IsNullOrWhiteSpace(source.Id))
             .GroupBy(source => source.Id, StringComparer.Ordinal)
@@ -394,8 +400,8 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
         {
             KeyboardKeyInputSource => true,
             MouseButtonInputSource => true,
-            JoystickAxisInputSource joystickAxis => snapshot.Axes.ContainsKey(InputSnapshotKeys.JoystickAxis(joystickAxis.DeviceId, joystickAxis.AxisIndex)),
-            JoystickButtonInputSource joystickButton => snapshot.Buttons.ContainsKey(InputSnapshotKeys.JoystickButton(joystickButton.DeviceId, joystickButton.ButtonIndex)),
+            JoystickAxisInputSource joystickAxis => HasCompatibleJoystickAxis(snapshot, joystickAxis),
+            JoystickButtonInputSource joystickButton => HasCompatibleJoystickButton(snapshot, joystickButton),
             VirtualButtonAxisInputSource virtualAxis =>
                 IsSourceConnected(virtualAxis.NegativeButtonSourceId, InputSourceKind.Button, sourceMap, snapshot) &&
                 IsSourceConnected(virtualAxis.PositiveButtonSourceId, InputSourceKind.Button, sourceMap, snapshot),
@@ -405,6 +411,22 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
                 compositeButton.SourceIds.Any(id => IsSourceConnected(id, InputSourceKind.Button, sourceMap, snapshot)),
             _ => false
         };
+    }
+
+    private static bool HasCompatibleJoystickAxis(InputSnapshot snapshot, JoystickAxisInputSource source)
+    {
+        return snapshot.Axes.Keys.Any(key =>
+            InputSnapshotKeys.TryParseJoystickAxis(key, out string snapshotDeviceId, out int axisIndex) &&
+            axisIndex == source.AxisIndex &&
+            InputSnapshotKeys.DeviceIdsMatch(source.DeviceId, snapshotDeviceId));
+    }
+
+    private static bool HasCompatibleJoystickButton(InputSnapshot snapshot, JoystickButtonInputSource source)
+    {
+        return snapshot.Buttons.Keys.Any(key =>
+            InputSnapshotKeys.TryParseJoystickButton(key, out string snapshotDeviceId, out int buttonIndex) &&
+            buttonIndex == source.ButtonIndex &&
+            InputSnapshotKeys.DeviceIdsMatch(source.DeviceId, snapshotDeviceId));
     }
 
     private sealed class WidgetMemory

@@ -57,7 +57,12 @@ public sealed class WindowsInputProvider : IInputProvider, IDisposable
             .GroupBy(pair => pair.Key, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Last().Value, StringComparer.Ordinal);
 
-        return new InputSnapshot(timestamp, axes, buttons);
+        Dictionary<string, NormalizedAxisIdentity> identities = new[] { keyboardMouseSnapshot, hidSnapshot, joystickSnapshot }
+            .SelectMany(snapshot => snapshot.AxisIdentities ?? new Dictionary<string, NormalizedAxisIdentity>())
+            .GroupBy(pair => pair.Key, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last().Value, StringComparer.Ordinal);
+
+        return new InputSnapshot(timestamp, axes, buttons, identities);
     }
 
     public async ValueTask<InputCaptureResult> CaptureNextBindingAsync(CancellationToken cancellationToken = default)

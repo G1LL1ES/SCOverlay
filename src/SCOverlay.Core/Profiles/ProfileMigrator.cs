@@ -10,6 +10,7 @@ public static class ProfileMigrator
         ArgumentNullException.ThrowIfNull(profile);
 
         bool shouldRepairKeyboardAlternates = profile.SchemaVersion < 2;
+        bool shouldAddRollValueWidget = profile.SchemaVersion < 3;
 
         if (profile.SchemaVersion != AppInfo.CurrentProfileSchemaVersion)
         {
@@ -23,9 +24,53 @@ public static class ProfileMigrator
             ? RepairDefaultKeyboardAlternates(profile)
             : profile;
 
+        profile = shouldAddRollValueWidget
+            ? AddRollValueWidget(profile)
+            : profile;
+
         return profile with
         {
             Appearance = AppearanceSettingsNormalizer.Normalize(profile.Appearance)
+        };
+    }
+
+    private static OverlayProfile AddRollValueWidget(OverlayProfile profile)
+    {
+        if (profile.Widgets.Any(widget => string.Equals(widget.Id, "roll-value-widget", StringComparison.OrdinalIgnoreCase)))
+        {
+            return profile;
+        }
+
+        RollWidgetDefinition? rollWidget = profile.Widgets.OfType<RollWidgetDefinition>().FirstOrDefault();
+        string? sourceId = rollWidget?.SourceId;
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            sourceId = profile.InputSources
+                .FirstOrDefault(source => source.Kind == InputSourceKind.Axis &&
+                    string.Equals(source.Id, "roll", StringComparison.OrdinalIgnoreCase))
+                ?.Id;
+        }
+
+        if (string.IsNullOrWhiteSpace(sourceId))
+        {
+            return profile;
+        }
+
+        StateTextWidgetDefinition? textTemplate = profile.Widgets.OfType<StateTextWidgetDefinition>().FirstOrDefault();
+        var rollValue = new RollValueWidgetDefinition
+        {
+            Id = "roll-value-widget",
+            DisplayName = "Roll Value",
+            X = 0,
+            Y = -120,
+            SourceId = sourceId,
+            VisualEffects = rollWidget?.VisualEffects ?? new EffectSettings(),
+            TextEffects = textTemplate?.TextEffects ?? new EffectSettings()
+        };
+
+        return profile with
+        {
+            Widgets = profile.Widgets.Concat(new WidgetDefinition[] { rollValue }).ToArray()
         };
     }
 

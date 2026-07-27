@@ -131,6 +131,14 @@ public static class DefaultProfiles
                 Y = -120,
                 SourceId = "roll"
             },
+            new RollValueWidgetDefinition
+            {
+                Id = "roll-value-widget",
+                DisplayName = "Roll Value",
+                X = 0,
+                Y = -120,
+                SourceId = "roll"
+            },
             new StateTextWidgetDefinition
             {
                 Id = "boost-widget",

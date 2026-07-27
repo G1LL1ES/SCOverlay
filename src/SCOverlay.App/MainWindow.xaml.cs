@@ -357,6 +357,7 @@ public partial class MainWindow : Window
         if (!profile.Runtime.BrowserSourceEnabled)
         {
             ObsUrlText.Text = "OBS browser source: disabled";
+            CopyObsUrlButton.IsEnabled = false;
             return;
         }
 
@@ -393,6 +394,7 @@ public partial class MainWindow : Window
         {
             log.Error("OBS browser source fallback startup failed.", exception);
             ObsUrlText.Text = $"OBS browser source unavailable:{Environment.NewLine}{exception.Message}";
+            CopyObsUrlButton.IsEnabled = false;
             FooterStatusText.Text = "OBS browser source could not start. Input diagnostics and desktop overlay are still running.";
         }
     }
@@ -402,6 +404,35 @@ public partial class MainWindow : Window
         ObsUrlText.Text = string.IsNullOrWhiteSpace(note)
             ? $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}"
             : $"OBS browser source:{Environment.NewLine}{browserSourceServer.Url}{Environment.NewLine}{note}";
+        CopyObsUrlButton.IsEnabled = browserSourceServer.IsRunning;
+    }
+
+    private async void CopyObsUrlButton_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (!browserSourceServer.IsRunning)
+        {
+            FooterStatusText.Text = "The OBS browser source is not currently available.";
+            return;
+        }
+
+        try
+        {
+            CopyObsUrlButton.IsEnabled = false;
+            IntPtr ownerWindow = new WindowInteropHelper(this).Handle;
+            bool copied = await WindowsClipboard.TrySetTextAsync(ownerWindow, browserSourceServer.Url);
+            FooterStatusText.Text = copied
+                ? "OBS browser source URL copied to the clipboard."
+                : "The Windows clipboard is busy. Try copying the OBS browser source URL again.";
+        }
+        catch (Exception exception)
+        {
+            log.Error("Failed to copy the OBS browser source URL to the clipboard.", exception);
+            FooterStatusText.Text = $"Could not copy the OBS browser source URL: {exception.Message}";
+        }
+        finally
+        {
+            CopyObsUrlButton.IsEnabled = browserSourceServer.IsRunning;
+        }
     }
 
     private IntPtr WindowMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -1876,6 +1907,7 @@ public partial class MainWindow : Window
                 case StickWidgetDefinition stick when SourceIdEquals(stick.XSourceId, sourceId) || SourceIdEquals(stick.YSourceId, sourceId):
                 case ThrottleWidgetDefinition throttle when SourceIdEquals(throttle.SourceId, sourceId):
                 case RollWidgetDefinition roll when SourceIdEquals(roll.SourceId, sourceId):
+                case RollValueWidgetDefinition rollValue when SourceIdEquals(rollValue.SourceId, sourceId):
                     return InputSourceKind.Axis;
                 case StateTextWidgetDefinition stateText when SourceIdEquals(stateText.SourceId, sourceId):
                     return null;

@@ -36,6 +36,9 @@ runner.Test("Default profiles are schema current and valid", () =>
         Assert.True(result.IsValid);
         Assert.True(profile.InputSources.Count > 0);
         Assert.True(profile.Widgets.Count > 0);
+        RollValueWidgetDefinition rollValue = profile.Widgets.OfType<RollValueWidgetDefinition>().Single();
+        Assert.Equal("roll", rollValue.SourceId);
+        Assert.Equal(-120d, rollValue.Y);
     }
 });
 
@@ -91,6 +94,7 @@ runner.Test("Profile JSON round-trips polymorphic sources and widgets", () =>
     string json = JsonSerializer.Serialize(profile, options);
     Assert.True(json.Contains("\"type\": \"keyboardKey\"", StringComparison.Ordinal));
     Assert.True(json.Contains("\"type\": \"stick\"", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"type\": \"rollValue\"", StringComparison.Ordinal));
 
     OverlayProfile? restored = JsonSerializer.Deserialize<OverlayProfile>(json, options);
     if (restored is null)
@@ -100,6 +104,7 @@ runner.Test("Profile JSON round-trips polymorphic sources and widgets", () =>
 
     Assert.True(restored.InputSources.OfType<VirtualButtonAxisInputSource>().Any(source => source.Id == "strafe-x"));
     Assert.True(restored.Widgets.OfType<StateTextWidgetDefinition>().Any(widget => widget.Id == "boost-widget"));
+    Assert.True(restored.Widgets.OfType<RollValueWidgetDefinition>().Any(widget => widget.Id == "roll-value-widget"));
     Assert.True(ProfileValidator.Validate(restored).IsValid);
 });
 
@@ -493,6 +498,39 @@ runner.Test("Profile migrator does not restore removed KBM alternates for curren
 
     Assert.True(migrated.InputSources.OfType<JoystickAxisInputSource>().Any(source => source.Id == "look-x"));
     Assert.False(migrated.InputSources.OfType<CompositeAxisInputSource>().Any(source => source.Id == "look-x"));
+});
+
+runner.Test("Profile migrator adds Roll Value once to schema 2 profiles", () =>
+{
+    OverlayProfile current = DefaultProfiles.CreateKbmDefault();
+    OverlayProfile oldProfile = current with
+    {
+        SchemaVersion = 2,
+        Widgets = current.Widgets.Where(widget => widget is not RollValueWidgetDefinition).ToArray()
+    };
+
+    OverlayProfile migrated = ProfileMigrator.Migrate(oldProfile);
+    OverlayProfile migratedAgain = ProfileMigrator.Migrate(migrated);
+
+    RollValueWidgetDefinition rollValue = migrated.Widgets.OfType<RollValueWidgetDefinition>().Single();
+    Assert.Equal(AppInfo.CurrentProfileSchemaVersion, migrated.SchemaVersion);
+    Assert.Equal("roll", rollValue.SourceId);
+    Assert.Equal(-120d, rollValue.Y);
+    Assert.Equal(1, migratedAgain.Widgets.OfType<RollValueWidgetDefinition>().Count());
+    Assert.True(ProfileValidator.Validate(migrated).IsValid);
+});
+
+runner.Test("Profile migrator respects Roll Value removal from current profiles", () =>
+{
+    OverlayProfile current = DefaultProfiles.CreateKbmDefault();
+    OverlayProfile withoutRollValue = current with
+    {
+        Widgets = current.Widgets.Where(widget => widget is not RollValueWidgetDefinition).ToArray()
+    };
+
+    OverlayProfile migrated = ProfileMigrator.Migrate(withoutRollValue);
+
+    Assert.False(migrated.Widgets.OfType<RollValueWidgetDefinition>().Any());
 });
 
 runner.Test("Profile migrator repairs transparent appearance colors from older saves", () =>
@@ -1190,10 +1228,11 @@ runner.Test("Overlay state engine emits typed widget states for default profile"
 
     Assert.Equal(profile.Id, state.ProfileId);
     Assert.True(state.Connected);
-    Assert.Equal(6, state.Widgets.Count);
+    Assert.Equal(7, state.Widgets.Count);
     Assert.True(state.Widgets.OfType<StickWidgetState>().Any(widget => widget.Id == "strafe-widget"));
     Assert.True(state.Widgets.OfType<ThrottleWidgetState>().Any(widget => widget.Id == "throttle-widget"));
     Assert.True(state.Widgets.OfType<RollWidgetState>().Any(widget => widget.Id == "roll-widget"));
+    Assert.True(state.Widgets.OfType<RollValueWidgetState>().Any(widget => widget.Id == "roll-value-widget" && widget.Value == 0));
     Assert.True(state.Widgets.OfType<StateTextWidgetState>().Any(widget => widget.Id == "boost-widget" && widget.Active));
 });
 
@@ -1335,6 +1374,35 @@ runner.Test("Overlay state engine smooths axis values across samples", () =>
 
     Assert.True(throttle.Value > 0.0);
     Assert.True(throttle.Value < 1.0);
+});
+
+runner.Test("Overlay state engine reports Roll Value magnitude from zero to one hundred", () =>
+{
+    OverlayProfile profile = DefaultProfiles.CreateHotasReference();
+    string rollKey = InputSnapshotKeys.JoystickAxis("joystick:2", 1);
+
+    OverlayState neutralState = new OverlayStateEngine().BuildState(profile, new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double> { [rollKey] = 0.0 },
+        new Dictionary<string, bool>()));
+    OverlayState leftState = new OverlayStateEngine().BuildState(profile, new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double> { [rollKey] = -0.42 },
+        new Dictionary<string, bool>()));
+    OverlayState rightState = new OverlayStateEngine().BuildState(profile, new InputSnapshot(
+        DateTimeOffset.UtcNow,
+        new Dictionary<string, double> { [rollKey] = 1.5 },
+        new Dictionary<string, bool>()));
+
+    RollValueWidgetState neutral = neutralState.Widgets.OfType<RollValueWidgetState>().Single();
+    RollValueWidgetState left = leftState.Widgets.OfType<RollValueWidgetState>().Single();
+    RollValueWidgetState right = rightState.Widgets.OfType<RollValueWidgetState>().Single();
+    Assert.Equal(0, neutral.Value);
+    Assert.Equal(42, left.Value);
+    Assert.Equal(100, right.Value);
+    Assert.True(neutral.Connected);
+    Assert.True(left.Connected);
+    Assert.True(right.Connected);
 });
 
 runner.Test("Overlay state engine reports joystick widgets disconnected when source is absent", () =>
@@ -1730,8 +1798,11 @@ runner.Test("Browser source serves OBS page, state JSON, and assets", () =>
     Assert.True(html.Contains("ctx.scale(scale, scale);", StringComparison.Ordinal));
     Assert.True(html.Contains("\"Segoe UI\"", StringComparison.Ordinal));
     Assert.True(html.Contains("ctx.shadowColor = 'transparent';", StringComparison.Ordinal));
+    Assert.True(html.Contains("case 'rollValue':", StringComparison.Ordinal));
+    Assert.True(html.Contains("function drawRollValue", StringComparison.Ordinal));
     Assert.True(json.Contains("\"profileId\":\"kbm-default\"", StringComparison.Ordinal));
     Assert.True(json.Contains("\"type\":\"stateText\"", StringComparison.Ordinal));
+    Assert.True(json.Contains("\"type\":\"rollValue\"", StringComparison.Ordinal));
     Assert.True(assets.Contains("roll-indicator-default", StringComparison.Ordinal));
     Assert.True(assets.Contains("roll-indicator-gladius", StringComparison.Ordinal));
     Assert.True(assets.Contains("roll-indicator-arrow", StringComparison.Ordinal));

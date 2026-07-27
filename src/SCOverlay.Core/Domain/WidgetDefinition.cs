@@ -6,6 +6,7 @@ namespace SCOverlay.Core.Domain;
 [JsonDerivedType(typeof(StickWidgetDefinition), "stick")]
 [JsonDerivedType(typeof(ThrottleWidgetDefinition), "throttle")]
 [JsonDerivedType(typeof(RollWidgetDefinition), "roll")]
+[JsonDerivedType(typeof(RollValueWidgetDefinition), "rollValue")]
 [JsonDerivedType(typeof(StateTextWidgetDefinition), "stateText")]
 public abstract record WidgetDefinition
 {
@@ -78,6 +79,15 @@ public sealed record RollWidgetDefinition : WidgetDefinition
     {
         ValueSmoothingSpeed = 98.0
     };
+}
+
+public sealed record RollValueWidgetDefinition : WidgetDefinition
+{
+    public string SourceId { get; init; } = string.Empty;
+
+    public int FontSize { get; init; } = 30;
+
+    public AxisTuning Tuning { get; init; } = new();
 }
 
 public enum RollRenderMode

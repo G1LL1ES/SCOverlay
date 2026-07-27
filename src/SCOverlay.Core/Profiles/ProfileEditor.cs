@@ -658,6 +658,7 @@ public static class ProfileEditor
                 case StickWidgetDefinition stick when Matches(stick.XSourceId, sourceId) || Matches(stick.YSourceId, sourceId):
                 case ThrottleWidgetDefinition throttle when Matches(throttle.SourceId, sourceId):
                 case RollWidgetDefinition roll when Matches(roll.SourceId, sourceId):
+                case RollValueWidgetDefinition rollValue when Matches(rollValue.SourceId, sourceId):
                     return replacementKind != InputSourceKind.Axis;
                 case StateTextWidgetDefinition:
                     break;
@@ -692,6 +693,11 @@ public static class ProfileEditor
                 TextEffects = textEffects
             },
             RollWidgetDefinition roll => roll with
+            {
+                VisualEffects = visualEffects,
+                TextEffects = textEffects
+            },
+            RollValueWidgetDefinition rollValue => rollValue with
             {
                 VisualEffects = visualEffects,
                 TextEffects = textEffects
@@ -732,6 +738,14 @@ public static class ProfileEditor
                 LineThickness = Math.Clamp(lineThickness, 0.0, 20.0)
             },
             RollWidgetDefinition roll => roll with
+            {
+                X = Math.Clamp(x, -1000.0, 1000.0),
+                Y = Math.Clamp(y, -1000.0, 1000.0),
+                Scale = Math.Clamp(scale, 0.25, 3.0),
+                Opacity = Math.Clamp(opacity, 0.0, 1.0),
+                LineThickness = Math.Clamp(lineThickness, 0.0, 20.0)
+            },
+            RollValueWidgetDefinition rollValue => rollValue with
             {
                 X = Math.Clamp(x, -1000.0, 1000.0),
                 Y = Math.Clamp(y, -1000.0, 1000.0),

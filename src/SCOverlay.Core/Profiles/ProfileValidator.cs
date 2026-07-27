@@ -247,6 +247,13 @@ public static class ProfileValidator
                         issues.Add(new ProfileValidationIssue($"{path}.maxRotationDegrees", "Roll max rotation must be between 5 and 180 degrees."));
                     }
                     break;
+                case RollValueWidgetDefinition rollValue:
+                    ValidateSourceReference(rollValue.SourceId, InputSourceKind.Axis, sourceById, $"{path}.sourceId", issues);
+                    if (rollValue.FontSize is < 8 or > 200)
+                    {
+                        issues.Add(new ProfileValidationIssue($"{path}.fontSize", "Roll value font size must be between 8 and 200."));
+                    }
+                    break;
                 case StateTextWidgetDefinition stateText:
                     Required(stateText.Text, $"{path}.text", "State text widget text is required.", issues);
                     ValidateSourceReference(stateText.SourceId, stateText.SourceKind, sourceById, $"{path}.sourceId", issues);

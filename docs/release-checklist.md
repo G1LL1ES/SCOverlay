@@ -37,6 +37,8 @@ The version always comes from `Directory.Build.props`. Packaging rejects an expl
 - Confirm Setup lists keyboard, mouse, and HID devices.
 - Confirm Bindings can capture a keyboard key, mouse button, and available joystick/HID input.
 - Confirm OBS URL opens in a browser and updates live.
+- Confirm **Copy URL** copies the active OBS browser-source URL without blocking the app.
+- Confirm Roll Value reads `0` at neutral and reaches `100` at full roll in either direction in both OBS and the desktop overlay.
 - Confirm desktop overlay can be shown, moved while unlocked, locked, and set click-through.
 - Confirm Appearance preset/effect changes update OBS and desktop overlay after Apply.
 - Close the app with `X` and confirm the process exits.

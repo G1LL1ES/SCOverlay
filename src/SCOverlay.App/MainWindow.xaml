@@ -50,13 +50,23 @@
                            TextWrapping="Wrap" />
             </StackPanel>
 
-            <TextBlock Grid.Column="1"
-                       x:Name="ObsUrlText"
-                       Foreground="#C7D6E2"
-                       FontSize="12"
-                       Margin="24,8,0,0"
-                       TextAlignment="Right"
-                       TextWrapping="Wrap" />
+            <StackPanel Grid.Column="1"
+                        Margin="24,8,0,0"
+                        HorizontalAlignment="Right">
+                <TextBlock x:Name="ObsUrlText"
+                           Foreground="#C7D6E2"
+                           FontSize="12"
+                           TextAlignment="Right"
+                           TextWrapping="Wrap" />
+                <Button x:Name="CopyObsUrlButton"
+                        Content="Copy URL"
+                        MinWidth="82"
+                        Height="28"
+                        Margin="0,7,0,0"
+                        HorizontalAlignment="Right"
+                        ToolTip="Copy the OBS browser source URL"
+                        Click="CopyObsUrlButton_OnClick" />
+            </StackPanel>
         </Grid>
 
         <Border Grid.Row="1"

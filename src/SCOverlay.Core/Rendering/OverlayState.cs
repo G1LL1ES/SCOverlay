@@ -19,6 +19,7 @@ public sealed record OverlayState(
 [JsonDerivedType(typeof(StickWidgetState), "stick")]
 [JsonDerivedType(typeof(ThrottleWidgetState), "throttle")]
 [JsonDerivedType(typeof(RollWidgetState), "roll")]
+[JsonDerivedType(typeof(RollValueWidgetState), "rollValue")]
 [JsonDerivedType(typeof(StateTextWidgetState), "stateText")]
 public abstract record WidgetState
 {
@@ -106,6 +107,17 @@ public sealed record RollWidgetState : WidgetState
     public double Value { get; init; }
 
     public double RotationDegrees { get; init; }
+}
+
+public sealed record RollValueWidgetState : WidgetState
+{
+    public double RawValue { get; init; }
+
+    public double Magnitude { get; init; }
+
+    public int Value { get; init; }
+
+    public double FontSize { get; init; }
 }
 
 public sealed record StateTextWidgetState : WidgetState

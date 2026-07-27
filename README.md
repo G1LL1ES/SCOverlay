@@ -22,6 +22,7 @@ SC Overlay can:
 - Let you create, save, import, and export profiles from the app.
 - Let you customize colors, opacity, widget scale, widget position, line thickness, rounded corners, shadows, outlines, and text backing.
 - Show roll as a rotating ship image or as a classic indicator.
+- Show roll magnitude as an integer from `0` at neutral to `100` at full input in either direction.
 - Use seeded roll images from the original SC Overlay reference project.
 - Show boost and brake state text, including optional shake when fully engaged.
 - Export local diagnostics when something is not behaving correctly.
@@ -186,6 +187,7 @@ Widget-specific controls include:
 - **Roll**: choose image mode or indicator mode.
 - **Roll**: choose the roll image asset.
 - **Roll**: set max rotation.
+- **Roll Value**: position, scale, and style the numeric roll-magnitude readout.
 - **Throttle**: rounded corners and center-anchored forward/reverse fill.
 - **Boost/Brake**: optional shake when maxed.
 

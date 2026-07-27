@@ -166,6 +166,9 @@ internal static class BrowserSourcePage
                 case 'roll':
                   drawRoll(widget);
                   break;
+                case 'rollValue':
+                  drawRollValue(widget);
+                  break;
                 case 'stateText':
                   drawStateText(widget);
                   break;
@@ -347,6 +350,39 @@ internal static class BrowserSourcePage
               }
 
               ctx.fillText(widget.text || '', 0, 0);
+            }
+
+            function drawRollValue(widget) {
+              const effects = widget.textEffects || {};
+              const size = Math.max(widget.fontSize || 30, 8);
+              const text = String(Math.max(0, Math.min(100, Math.round(widget.value || 0))));
+              ctx.font = `700 ${size}px "Segoe UI", Arial, Helvetica, sans-serif`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillStyle = color(widget.displayColor);
+
+              if (effects.backplateEnabled) {
+                const metrics = ctx.measureText(text);
+                const padding = effects.backplatePadding ?? 10;
+                const width = metrics.width + (padding * 2);
+                const height = size + (padding * 1.2);
+                ctx.save();
+                ctx.shadowColor = 'transparent';
+                ctx.fillStyle = color(effects.backplateColor, 1);
+                roundedRect(-width / 2, -height / 2, width, height, effects.backplateRadius || 0);
+                ctx.fill();
+                ctx.restore();
+              }
+
+              applyShadow(effects);
+              if (effects.outlineEnabled) {
+                ctx.lineWidth = Math.max(0, effects.outlineWidth || 0) * 2;
+                ctx.strokeStyle = color(effects.outlineColor, 1);
+                ctx.strokeText(text, 0, 0);
+              }
+
+              ctx.fillStyle = color(widget.displayColor);
+              ctx.fillText(text, 0, 0);
             }
 
             requestAnimationFrame(draw);

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
@@ -182,6 +183,9 @@ public partial class DesktopOverlayWindow : Window
                     break;
                 case RollWidgetState roll:
                     DrawRoll(roll, centerX, centerY);
+                    break;
+                case RollValueWidgetState rollValue:
+                    DrawRollValue(rollValue, centerX, centerY);
                     break;
                 case StateTextWidgetState stateText:
                     DrawStateText(stateText, centerX, centerY);
@@ -456,33 +460,61 @@ public partial class DesktopOverlayWindow : Window
             textX += Math.Sin(ticks * 0.095) * 1.8 * widget.ShakeIntensity;
             textY += Math.Cos(ticks * 0.12) * 1.2 * widget.ShakeIntensity;
         }
+
+        DrawText(widget.Text, widget.FontSize, widget.DisplayColor, widget.TextEffects, textX, textY, textOpacity, connectedOpacity);
+    }
+
+    private void DrawRollValue(RollValueWidgetState widget, double centerX, double centerY)
+    {
+        double opacity = WidgetOpacity(widget);
+        DrawText(
+            widget.Value.ToString(CultureInfo.InvariantCulture),
+            widget.FontSize,
+            widget.DisplayColor,
+            widget.TextEffects,
+            centerX + widget.X,
+            centerY + widget.Y,
+            opacity,
+            opacity);
+    }
+
+    private void DrawText(
+        string value,
+        double fontSize,
+        RgbaColor displayColor,
+        EffectSettings effects,
+        double textX,
+        double textY,
+        double textOpacity,
+        double effectOpacity)
+    {
         var text = new TextBlock
         {
-            Text = widget.Text,
-            Foreground = Brush(widget.DisplayColor, textOpacity),
-            FontSize = Math.Max(widget.FontSize, 8),
+            Text = value,
+            Foreground = Brush(displayColor, textOpacity),
+            FontSize = Math.Max(fontSize, 8),
             FontWeight = FontWeights.Bold,
-            Effect = ShadowEffect(widget.TextEffects, connectedOpacity)
+            Effect = ShadowEffect(effects, effectOpacity)
         };
         text.Measure(new WpfSize(double.PositiveInfinity, double.PositiveInfinity));
         double left = textX - (text.DesiredSize.Width / 2.0);
         double top = textY - (text.DesiredSize.Height / 2.0);
-        if (widget.TextEffects.BackplateEnabled)
+        if (effects.BackplateEnabled)
         {
-            double padding = Math.Max(widget.TextEffects.BackplatePadding, 0.0);
+            double padding = Math.Max(effects.BackplatePadding, 0.0);
             Add(new WpfRectangle
             {
                 Width = text.DesiredSize.Width + (padding * 2),
                 Height = text.DesiredSize.Height + (padding * 1.2),
-                RadiusX = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
-                RadiusY = Math.Max(widget.TextEffects.BackplateRadius, 0.0),
-                Fill = Brush(widget.TextEffects.BackplateColor, connectedOpacity)
+                RadiusX = Math.Max(effects.BackplateRadius, 0.0),
+                RadiusY = Math.Max(effects.BackplateRadius, 0.0),
+                Fill = Brush(effects.BackplateColor, effectOpacity)
             }, left - padding, top - (padding * 0.6));
         }
 
-        if (widget.TextEffects.OutlineEnabled && widget.TextEffects.OutlineWidth > 0.0)
+        if (effects.OutlineEnabled && effects.OutlineWidth > 0.0)
         {
-            AddTextOutline(widget, left, top, text.DesiredSize, connectedOpacity);
+            AddTextOutline(value, fontSize, effects, left, top, text.DesiredSize, effectOpacity);
         }
 
         Add(text, left, top);
@@ -521,9 +553,16 @@ public partial class DesktopOverlayWindow : Window
         return Math.Clamp(color.A / 255.0, 0.0, 1.0);
     }
 
-    private void AddTextOutline(StateTextWidgetState widget, double left, double top, WpfSize desiredSize, double opacity)
+    private void AddTextOutline(
+        string value,
+        double fontSize,
+        EffectSettings effects,
+        double left,
+        double top,
+        WpfSize desiredSize,
+        double opacity)
     {
-        double offset = Math.Max(widget.TextEffects.OutlineWidth, 1.0);
+        double offset = Math.Max(effects.OutlineWidth, 1.0);
         WpfPoint[] offsets =
         {
             new(-offset, 0),
@@ -540,9 +579,9 @@ public partial class DesktopOverlayWindow : Window
         {
             var outline = new TextBlock
             {
-                Text = widget.Text,
-                Foreground = Brush(widget.TextEffects.OutlineColor, opacity),
-                FontSize = Math.Max(widget.FontSize, 8),
+                Text = value,
+                Foreground = Brush(effects.OutlineColor, opacity),
+                FontSize = Math.Max(fontSize, 8),
                 FontWeight = FontWeights.Bold
             };
             outline.Measure(desiredSize);

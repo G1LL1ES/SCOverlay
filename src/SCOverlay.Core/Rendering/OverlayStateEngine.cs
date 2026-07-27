@@ -36,6 +36,7 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
                 StickWidgetDefinition stick => BuildStick(stick, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
                 ThrottleWidgetDefinition throttle => BuildThrottle(throttle, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
                 RollWidgetDefinition roll => BuildRoll(roll, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
+                RollValueWidgetDefinition rollValue => BuildRollValue(rollValue, profile.Appearance, inputState, inputSnapshot, sourceMap),
                 StateTextWidgetDefinition stateText => BuildStateText(stateText, profile.Appearance, inputState, inputSnapshot, sourceMap, elapsedSeconds),
                 _ => throw new InvalidOperationException($"Unsupported widget type {widget.GetType().Name}.")
             });
@@ -206,6 +207,28 @@ public sealed class OverlayStateEngine : IOverlayStateEngine
             FontSize = ScaleSize(Lerp(widget.FontSizeOff, widget.FontSizeOn, intensity), appearance, widget),
             Connected = IsSourceConnected(widget.SourceId, widget.SourceKind, sourceMap, snapshot),
             Activity = activity
+        });
+    }
+
+    private RollValueWidgetState BuildRollValue(
+        RollValueWidgetDefinition widget,
+        AppearanceSettings appearance,
+        EvaluatedInputState inputState,
+        InputSnapshot snapshot,
+        IReadOnlyDictionary<string, InputSource> sourceMap)
+    {
+        double rawValue = ApplyAxisGate(inputState.GetAxis(widget.SourceId), widget.Tuning.Deadzone, widget.Tuning.InputNoiseGate);
+        double magnitude = Math.Clamp(Math.Abs(rawValue), 0.0, 1.0);
+        int value = (int)Math.Round(magnitude * 100.0, MidpointRounding.AwayFromZero);
+
+        return ApplyCommon(widget, appearance, new RollValueWidgetState
+        {
+            RawValue = rawValue,
+            Magnitude = magnitude,
+            Value = Math.Clamp(value, 0, 100),
+            FontSize = ScaleSize(widget.FontSize, appearance, widget),
+            Connected = IsAxisConnected(widget.SourceId, sourceMap, snapshot),
+            Activity = ApplyRamp(magnitude, widget.Tuning.ColorRampExponent)
         });
     }
 
